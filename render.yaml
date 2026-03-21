@@ -1,0 +1,14 @@
+# Render.com deployment configuration
+# Deploy this bot as a background worker on Render.com (free tier)
+
+services:
+  - type: worker
+    name: trading-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py auto -i 5 -t -m equity crypto
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
