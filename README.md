@@ -1,0 +1,161 @@
+# Trading Signal Analyzer
+
+Structured BUY / SELL / HOLD signal generator for **Indian equities (NSE/BSE)** and **global cryptocurrency** markets.
+
+## Setup (virtual environment)
+
+**Windows (PowerShell)** — from the project folder:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+```
+
+Use **`python -m pip`** (not bare `pip`) so packages install into the same interpreter you run with `python`.
+
+**Windows (cmd.exe):**
+
+```bat
+python -m venv .venv
+.venv\Scripts\activate.bat
+python -m pip install -r requirements.txt
+```
+
+**macOS / Linux:**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+After activation, your prompt usually shows `(.venv)`.
+
+### Windows: `python3` not found?
+
+On Windows, use **`python`** (not `python3`). The Store alias for `python3` may show “Python was not found”.
+
+```powershell
+python --version
+python -m venv .venv
+```
+
+If you have the **Python Launcher** installed:
+
+```powershell
+py -3 -m venv .venv
+```
+
+If `python` also fails, install Python from [python.org](https://www.python.org/downloads/) and check **“Add python.exe to PATH”** during setup, or turn off **App execution aliases** for `python.exe` / `python3.exe` under *Settings → Apps → Advanced app settings → App execution aliases*.
+
+## Usage
+
+### Interactive Mode
+
+```bash
+python main.py
+```
+
+This opens a REPL with full access to all commands:
+
+| Command | Description |
+|---|---|
+| `analyze RELIANCE equity` | Analyze an NSE stock (blocked Sat/Sun & outside 9:15–3:30 IST) |
+| `analyze RELIANCE equity --force` | Same, but allowed off-hours/weekend (research only) |
+| `analyze BTCUSDT crypto` | Analyze a crypto pair (24/7; no weekend block) |
+| `scan equity` | Scan Indian equity watchlist |
+| `scan crypto` | Scan crypto watchlist |
+| `risk` | Show risk management dashboard |
+| `capital 500000` | Set trading capital |
+| `result RELIANCE 2500` | Record trade P&L |
+| `reset-review` | Exit review mode after analysis |
+| `reset-halt` | Resume after drawdown halt |
+| `watchlist` | Show default watchlists |
+
+### Single Analysis (CLI)
+
+```bash
+python main.py RELIANCE equity
+python main.py BTCUSDT crypto
+```
+
+## Architecture
+
+```
+tradingBot/
+├── config.py          # All thresholds, enums, and the TradeSignal dataclass
+├── data_fetcher.py    # yfinance (equities) + Binance API (crypto) + market data
+├── indicators.py      # EMA, RSI, MACD, Bollinger Bands, ATR, OBV
+├── market_context.py  # Timing windows, event filters, India/crypto specifics
+├── signal_engine.py   # Core signal generation combining all indicators
+├── risk_manager.py    # Position sizing, drawdown tracking, review/halt mode
+├── formatter.py       # Structured output matching the signal report template
+├── main.py            # CLI entry point (interactive + single-shot)
+└── requirements.txt
+```
+
+## Signal Output Format
+
+Every signal includes: asset, direction, entry zone, stop loss, two targets, timeframe, confidence (1-10), invalidation level, and 3+ technical + 1 fundamental reason.
+
+## Automated Mode (Daemon)
+
+Run the bot continuously to automatically scan markets and send alerts:
+
+```powershell
+# Scan every 15 minutes (default)
+python main.py auto
+
+# Scan every 5 minutes
+python main.py auto --interval 5
+
+# Scan with Telegram notifications
+python main.py auto --telegram
+
+# Scan specific markets
+python main.py auto --interval 15 --markets equity crypto
+python main.py auto -i 5 -m crypto  # Crypto only, 5 min interval
+
+# Full options
+python main.py auto -i 15 -t -m equity crypto
+```
+
+### Environment Variables
+
+Create a `.env` file (copy from `.env.example`) or set environment variables:
+
+```powershell
+# Windows
+$env:TELEGRAM_BOT_TOKEN="your_bot_token"
+$env:TELEGRAM_CHAT_ID="your_chat_id"
+
+# Then run
+python main.py auto --telegram
+```
+
+### Telegram Setup
+
+1. **Create Bot**: Message @BotFather on Telegram, use /newbot command
+2. **Get Chat ID**: Message @userinfobot to get your chat ID
+3. **Configure**: Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID environment variables
+
+### What Happens in Auto Mode
+
+- Scans all 20 Indian equity stocks and 10 crypto pairs
+- Sends Telegram alert when BUY or SELL signal is detected
+- Prevents spam with 5-minute cooldown per asset
+- Shows scan summary with top signal after each scan
+- Press Ctrl+C to stop
+
+## Risk Management
+
+- Max 2% capital at risk per trade
+- Max 3 simultaneous signals
+- 3 consecutive losses → automatic review mode
+- 10% drawdown → all signals halted until human review
+- Position sizing: `(Capital × 0.02) ÷ (Entry − Stop Loss) = Units`
+
+## Disclaimer
+
+This tool provides algorithmic analysis, not financial advice. Past performance does not guarantee future results. Never risk more than you can afford to lose.
