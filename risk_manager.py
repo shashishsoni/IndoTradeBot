@@ -18,6 +18,21 @@ from config import (
 STATE_FILE = os.path.join(os.path.dirname(__file__), "risk_state.json")
 
 
+def _parse_capital_from_env() -> Optional[float]:
+    """Read CAPITAL or TRADING_CAPITAL from environment (for servers without risk_state.json)."""
+    for key in ("CAPITAL", "TRADING_CAPITAL"):
+        raw = os.environ.get(key)
+        if not raw:
+            continue
+        try:
+            val = float(str(raw).replace(",", "").strip())
+            if val > 0:
+                return val
+        except ValueError:
+            continue
+    return None
+
+
 @dataclass
 class RiskState:
     capital: float = 100_000.0
@@ -61,14 +76,38 @@ class RiskState:
 
     @classmethod
     def load(cls) -> "RiskState":
+        """
+        Load persisted state if present.
+
+        - No risk_state.json (e.g. fresh deploy): use CAPITAL / TRADING_CAPITAL env if set.
+        - File exists: load it; only replace capital from env if FORCE_CAPITAL_FROM_ENV=1.
+          (So local dev keeps risk_state.json unless you force a reset.)
+        """
+        env_cap = _parse_capital_from_env()
+        force_env = os.environ.get("FORCE_CAPITAL_FROM_ENV", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+
         if not os.path.exists(STATE_FILE):
-            return cls()
+            state = cls()
+            if env_cap is not None:
+                state.capital = env_cap
+                state.initial_capital = env_cap
+            return state
+
         try:
             with open(STATE_FILE) as f:
                 data = json.load(f)
-            return cls(**data)
+            state = cls(**data)
         except Exception:
-            return cls()
+            state = cls()
+
+        if env_cap is not None and force_env:
+            state.capital = env_cap
+            state.initial_capital = env_cap
+        return state
 
 
 def calculate_position_size(

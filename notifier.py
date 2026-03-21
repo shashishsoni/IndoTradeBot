@@ -7,9 +7,12 @@ import datetime
 import json
 import os
 import time
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 
 import requests
+
+if TYPE_CHECKING:
+    from risk_manager import RiskState
 from zoneinfo import ZoneInfo
 
 from config import SignalType, TradeSignal
@@ -98,6 +101,82 @@ class TelegramNotifier:
         except Exception as e:
             print(f"❌ Failed to send Telegram message: {e}")
             return False
+
+    def send_plain_text(self, text: str) -> bool:
+        """
+        Send plain text (no Markdown/HTML) — avoids parse errors on special chars.
+        Splits into multiple messages if longer than Telegram's 4096 character limit.
+        """
+        if not self.is_configured():
+            print(f"⚠️ Telegram not configured. Message:\n{text[:500]}...")
+            return False
+        if not text:
+            return True
+
+        TELEGRAM_MAX = 4096
+        # Reserve space for "Part n/m" header on multi-part messages
+        header_reserve = 40
+        chunk_body = TELEGRAM_MAX - header_reserve
+
+        chunks: List[str] = []
+        i = 0
+        while i < len(text):
+            chunks.append(text[i : i + chunk_body])
+            i += chunk_body
+
+        url = f"{self.api_url}/sendMessage"
+        ok_all = True
+        for idx, part in enumerate(chunks):
+            if len(chunks) > 1:
+                body = f"📄 Part {idx + 1}/{len(chunks)}\n\n{part}"
+            else:
+                body = part
+            if len(body) > TELEGRAM_MAX:
+                body = body[:TELEGRAM_MAX]
+            try:
+                response = requests.post(
+                    url,
+                    json={"chat_id": self.chat_id, "text": body},
+                    timeout=30,
+                )
+                if response.status_code != 200:
+                    print(f"❌ Telegram API error: {response.text}")
+                    hint = _telegram_error_hint(response)
+                    if hint:
+                        print(f"   💡 {hint}")
+                    ok_all = False
+                else:
+                    if len(chunks) > 1:
+                        print(f"✅ Telegram part {idx + 1}/{len(chunks)} sent")
+            except Exception as e:
+                print(f"❌ Failed to send Telegram message: {e}")
+                ok_all = False
+        if ok_all and len(chunks) == 1:
+            print("✅ Telegram message sent successfully")
+        elif ok_all:
+            print(f"✅ Telegram: sent {len(chunks)} message(s)")
+        return ok_all
+
+    def send_detailed_scan_report(
+        self,
+        results: List[TradeSignal],
+        market_name: str,
+        risk_state: Optional["RiskState"] = None,
+        include_guide: bool = True,
+        include_full_top_report: bool = True,
+    ) -> bool:
+        """Send the same detailed scan report as the console (rankings, table, guide, full signal)."""
+        from scan_report import format_detailed_scan_report
+
+        body = format_detailed_scan_report(
+            results,
+            market_name,
+            risk_state=risk_state,
+            include_guide=include_guide,
+            include_full_top_report=include_full_top_report,
+        )
+        title = f"📊 Detailed scan — {market_name}\n\n"
+        return self.send_plain_text(title + body)
 
     def format_signal_message(
         self, 
@@ -339,15 +418,22 @@ def send_telegram_alert(signal: TradeSignal, market_name: str) -> bool:
 
 
 def send_scan_alert(
-    results: List[TradeSignal], 
+    results: List[TradeSignal],
     market_name: str,
     buy_count: int,
     sell_count: int,
-    hold_count: int
+    hold_count: int,
+    risk_state: Optional["RiskState"] = None,
 ) -> bool:
-    """Convenience function to send a scan summary."""
+    """Send full detailed scan (rankings, entry table, guide, top signal) to Telegram."""
     notifier = get_notifier()
-    return notifier.send_scan_summary(results, market_name, buy_count, sell_count, hold_count)
+    return notifier.send_detailed_scan_report(
+        results,
+        market_name,
+        risk_state=risk_state,
+        include_guide=True,
+        include_full_top_report=True,
+    )
 
 
 if __name__ == "__main__":

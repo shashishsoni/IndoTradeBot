@@ -64,8 +64,7 @@ This opens a REPL with full access to all commands:
 | `analyze RELIANCE equity` | Analyze an NSE stock (blocked Sat/Sun & outside 9:15–3:30 IST) |
 | `analyze RELIANCE equity --force` | Same, but allowed off-hours/weekend (research only) |
 | `analyze BTCUSDT crypto` | Analyze a crypto pair (24/7; no weekend block) |
-| `scan equity` | Scan Indian equity watchlist |
-| `scan crypto` | Scan crypto watchlist |
+| `scan equity` / `scan crypto` | Full ranked report in console; add **`-t`** or **`--telegram`** to also send that report to Telegram |
 | `risk` | Show risk management dashboard |
 | `capital 500000` | Set trading capital |
 | `result RELIANCE 2500` | Record trade P&L |
@@ -80,6 +79,24 @@ python main.py RELIANCE equity
 python main.py BTCUSDT crypto
 ```
 
+### Detailed scan output (`scan equity` / `scan crypto`)
+
+Each scan prints:
+
+1. **Per-symbol line** — signal and confidence.  
+2. **Highest-confidence BUY list** and **SELL list** — which names to research first for longs vs shorts.  
+3. **“TOP BUY / TOP SELL PICK”** — single best name in each direction this run.  
+4. **Entry focus table** — entry zone and stop for every symbol (sorted by confidence).  
+5. **Strong signal guide** — how professionals often combine RSI, MACD, and volume (see references below).  
+6. **Full signal report** for the highest-confidence actionable symbol (or highest HOLD if everything is HOLD).
+
+**Further reading (external, not affiliated):**
+
+- [Investing.com Academy — RSI and MACD together](https://www.investing.com/academy/analysis/how-to-use-rsi-and-macd-together/)  
+- RSI + volume / avoiding false signals: search for “RSI volume confirmation” on reputable TA sites.
+
+This tool **does not** guarantee which stock to buy; it **ranks** candidates from your watchlist so you know where to look first.
+
 ## Architecture
 
 ```
@@ -89,9 +106,11 @@ tradingBot/
 ├── indicators.py      # EMA, RSI, MACD, Bollinger Bands, ATR, OBV
 ├── market_context.py  # Timing windows, event filters, India/crypto specifics
 ├── signal_engine.py   # Core signal generation combining all indicators
+├── scan_report.py     # Detailed scan rankings, entry table, strong-signal education text
 ├── risk_manager.py    # Position sizing, drawdown tracking, review/halt mode
 ├── formatter.py       # Structured output matching the signal report template
-├── main.py            # CLI entry point (interactive + single-shot)
+├── notifier.py        # Telegram alerts
+├── main.py            # CLI entry point (interactive + single-shot + auto)
 └── requirements.txt
 ```
 
@@ -130,7 +149,13 @@ Example `.env` (no spaces around `=`; no quotes needed unless the value has spac
 ```env
 TELEGRAM_BOT_TOKEN=123456789:AA...your_token
 TELEGRAM_CHAT_ID=123456789
+CAPITAL=1000
 ```
+
+**`CAPITAL` (or `TRADING_CAPITAL`)** — Trading account size in ₹ for position sizing.  
+Because **`risk_state.json` is gitignored**, production (Render, VPS, etc.) usually has **no** saved file on first deploy. In that case the app reads **`CAPITAL` from the environment** (set it in the Render dashboard or `.env` on the server). Example: `CAPITAL=1000` for ₹1,000.
+
+If a **`risk_state.json` file already exists** (e.g. on your PC), that file wins unless you set **`FORCE_CAPITAL_FROM_ENV=1`** to reset capital from env.
 
 If Telegram still says “not configured”, check: **file is named `.env`**, it lives next to `main.py`, you **restarted** the process after editing, and you ran **`pip install python-dotenv`**.
 
@@ -154,9 +179,9 @@ python main.py auto --telegram
 ### What Happens in Auto Mode
 
 - Scans all 20 Indian equity stocks and 10 crypto pairs
-- Sends Telegram alert when BUY or SELL signal is detected
+- With `--telegram` / `-t`: after each scan, sends the **full detailed report** to Telegram (rankings, entry table, strong-signal guide, full signal on top pick) — split into multiple messages if very long
 - Prevents spam with 5-minute cooldown per asset
-- Shows scan summary with top signal after each scan
+- Console still shows the same detailed output locally
 - Press Ctrl+C to stop
 
 ## Risk Management

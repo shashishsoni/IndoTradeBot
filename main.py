@@ -58,6 +58,7 @@ from risk_manager import (
     get_risk_summary,
     record_trade_result,
 )
+from scan_report import format_detailed_scan_report
 from signal_engine import generate_signal
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -73,7 +74,7 @@ HELP_TEXT = """
 
 COMMANDS:
   analyze <symbol> [equity|crypto] [--force]  — Generate signal (see --force below)
-  scan <equity|crypto>              — Scan a watchlist
+  scan <equity|crypto> [--telegram]   — Scan watchlist; add -t to send full report to Telegram
   auto --interval <min>             — Auto-scan mode (daemon)
   risk                              — Show risk dashboard
   capital <amount>                  — Set trading capital
@@ -206,57 +207,68 @@ def scan_watchlist(
     risk_state: RiskState,
     send_telegram: bool = False,
 ) -> str:
-    """Scan a full watchlist and show top signals."""
+    """Scan a full watchlist: rankings, entry table, strong-signal guide, full report for top name."""
     watchlist = EQUITY_WATCHLIST if market == MarketType.INDIA_EQUITY else CRYPTO_WATCHLIST
     market_name = "Indian Equity" if market == MarketType.INDIA_EQUITY else "Crypto"
 
-    lines = [
-        "",
-        "═" * 50,
-        f"📋 WATCHLIST SCAN — {market_name} ({len(watchlist)} assets)",
-        "═" * 50,
-    ]
+    header = (
+        f"\n{'═' * 50}\n"
+        f"📋 WATCHLIST SCAN — {market_name} ({len(watchlist)} assets)\n"
+        f"{'═' * 50}\n"
+    )
 
     results = []
+    progress_lines = []
     for symbol in watchlist:
         try:
+            print(f"  · Scanning {symbol}...", end="\r", flush=True)
             df = fetch_data(symbol, market)
             if df is None or len(df) < 50:
+                progress_lines.append(f"  ⚠️ {symbol:<12} | skipped (no data)")
                 continue
             sig = generate_signal(df, symbol, market)
             if sig is None:
+                progress_lines.append(f"  ⚠️ {symbol:<12} | skipped (indicators)")
                 continue
             results.append(sig)
             emoji = {"BUY": "🟢", "SELL": "🔴", "HOLD": "🟡"}[sig.signal.value]
             c = sig.currency_symbol
-            lines.append(
+            progress_lines.append(
                 f"  {emoji} {symbol:<12} | {sig.signal.value:<4} | "
-                f"Confidence: {sig.confidence}/10 | "
-                f"Entry: {c}{sig.entry_mid:,.2f} | SL: {c}{sig.stop_loss:,.2f}"
+                f"Conf {sig.confidence}/10 | {c}{sig.entry_mid:,.2f}"
             )
         except Exception as e:
-            lines.append(f"  ❌ {symbol:<12} | Error: {e}")
+            progress_lines.append(f"  ❌ {symbol:<12} | Error: {e}")
 
-    buy_signals = [r for r in results if r.signal == SignalType.BUY]
-    sell_signals = [r for r in results if r.signal == SignalType.SELL]
+    print(" " * 40, end="\r")
 
-    lines.append("")
-    lines.append(f"Summary: {len(buy_signals)} BUY | {len(sell_signals)} SELL | "
-                 f"{len(results) - len(buy_signals) - len(sell_signals)} HOLD")
+    if not results:
+        return header + "\n".join(progress_lines) + "\n\n⚠️ No symbols produced signals.\n"
 
-    # Show detailed report for highest-confidence actionable signal
-    actionable = sorted(
-        [r for r in results if r.signal != SignalType.HOLD],
-        key=lambda s: s.confidence,
-        reverse=True,
+    body = format_detailed_scan_report(
+        results,
+        market_name,
+        risk_state=risk_state,
+        include_guide=True,
+        include_full_top_report=True,
     )
-    if actionable:
-        lines.append(f"\n🏆 TOP SIGNAL: {actionable[0].asset}")
-        now = datetime.datetime.now(IST)
-        lines.append(format_signal_report(actionable[0], risk_state=risk_state, now=now))
+    out = header + "\n".join(progress_lines) + "\n" + body
 
-    lines.append("═" * 50)
-    return "\n".join(lines)
+    if send_telegram:
+        notifier = TelegramNotifier()
+        if notifier.is_configured():
+            notifier.send_detailed_scan_report(
+                results,
+                market_name,
+                risk_state=risk_state,
+                include_guide=True,
+                include_full_top_report=True,
+            )
+            out += "\n✅ Same detailed report sent to Telegram.\n"
+        else:
+            out += "\n⚠️ Telegram not configured — set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env\n"
+
+    return out
 
 
 def interactive_loop():
@@ -350,10 +362,16 @@ def interactive_loop():
 
         elif cmd == "scan":
             if len(parts) < 2:
-                print("Usage: scan <equity|crypto>")
+                print("Usage: scan <equity|crypto> [--telegram]")
                 continue
 
-            market_str = parts[1].lower()
+            send_tg = "--telegram" in parts or "-t" in parts
+            market_tokens = [p for p in parts[1:] if p.lower() not in ("--telegram", "-t")]
+            if not market_tokens:
+                print("Usage: scan <equity|crypto> [--telegram]")
+                continue
+
+            market_str = market_tokens[0].lower()
             if market_str in ("equity", "stock", "nse"):
                 market = MarketType.INDIA_EQUITY
             elif market_str in ("crypto", "btc", "coin"):
@@ -362,7 +380,7 @@ def interactive_loop():
                 print("Unknown market. Use 'equity' or 'crypto'.")
                 continue
 
-            print(scan_watchlist(market, state))
+            print(scan_watchlist(market, state, send_telegram=send_tg))
 
         elif cmd == "auto":
             # Auto/daemon mode
@@ -455,37 +473,46 @@ def _scan_market(
             if sig is None:
                 continue
             results.append(sig)
-            
+
             emoji = {"BUY": "🟢", "SELL": "🔴", "HOLD": "🟡"}[sig.signal.value]
-            c = sig.currency_symbol
             print(f"  {emoji} {symbol:<12} | {sig.signal.value:<4} | Conf: {sig.confidence}/10")
-            
-            # Send Telegram alert for BUY/SELL signals
-            if send_notifications and notifier and notifier.is_configured():
-                if sig.signal != SignalType.HOLD:
-                    sent = notifier.send_signal_alert(sig, market_name, force=False)
-                    if sent:
-                        print(f"    📱 Alert sent for {symbol}")
-                        
+
+            # Full detailed report is sent once after the scan (see below).
+
         except Exception as e:
             print(f"  ❌ {symbol:<12} | Error: {e}")
-    
+
     buy_signals = [r for r in results if r.signal == SignalType.BUY]
     sell_signals = [r for r in results if r.signal == SignalType.SELL]
     hold_signals = [r for r in results if r.signal == SignalType.HOLD]
-    
+
     print(f"\n📊 SCAN COMPLETE:")
     print(f"  🟢 BUY: {len(buy_signals)}")
     print(f"  🔴 SELL: {len(sell_signals)}")
     print(f"  🟡 HOLD: {len(hold_signals)}")
-    
-    # Send scan summary to Telegram
-    if send_notifications and notifier and notifier.is_configured():
-        notifier.send_scan_summary(
-            results, market_name, 
-            len(buy_signals), len(sell_signals), len(hold_signals)
+
+    if results:
+        # Ranked opportunities + entry table (skip long guide each interval in daemon)
+        print(
+            format_detailed_scan_report(
+                results,
+                market_name,
+                risk_state=state,
+                include_guide=not send_notifications,
+                include_full_top_report=True,
+            )
         )
-    
+
+    # Send full detailed scan (rankings, entry table, guide, top pick report) to Telegram
+    if send_notifications and notifier and notifier.is_configured() and results:
+        notifier.send_detailed_scan_report(
+            results,
+            market_name,
+            risk_state=state,
+            include_guide=True,
+            include_full_top_report=True,
+        )
+
     return results
 
 
