@@ -703,6 +703,11 @@ def parse_auto_args(args_list):
         default=os.environ.get("TELEGRAM_CHAT_ID", ""),
         help="Telegram chat ID (or set TELEGRAM_CHAT_ID env)"
     )
+    parser.add_argument(
+        "--no-schedule",
+        action="store_true",
+        help="Disable smart scheduling (run 24/7)"
+    )
     
     # Remove 'auto', 'daemon', 'run' and script name from args
     clean_args = [a for a in args_list[2:] if a.lower() not in ('auto', 'daemon', 'run')]
@@ -734,6 +739,7 @@ if __name__ == "__main__":
                 telegram_enabled=args.telegram,
                 token=args.token if args.token else None,
                 chat_id=args.chat_id if args.chat_id else None,
+                smart_schedule=not args.no_schedule,
             )
         # Single analysis mode
         else:
