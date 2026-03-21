@@ -3,13 +3,40 @@ Telegram Notification Module for Trading Signal Analyzer.
 Sends alerts when BUY/SELL signals are detected.
 """
 
+import datetime
+import json
 import os
 import time
 from typing import List, Optional
 
 import requests
+from zoneinfo import ZoneInfo
 
 from config import SignalType, TradeSignal
+
+
+def _telegram_error_hint(response: requests.Response) -> str:
+    """Explain common Telegram Bot API errors (wrong chat id, etc.)."""
+    try:
+        data = response.json()
+        desc = str(data.get("description", "")).lower()
+        code = data.get("error_code")
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return ""
+
+    if code == 403 and "bots can't send messages to bots" in desc:
+        return (
+            "TELEGRAM_CHAT_ID must be *your personal user id* (from @userinfobot), "
+            "not another bot’s id and not @BotFather’s id.\n"
+            "   → Open Telegram as yourself → message @userinfobot → copy the numeric `Id` into .env"
+        )
+    if code == 403 and "blocked" in desc:
+        return "User blocked the bot — open the bot chat and tap Start / Unblock."
+    if "chat not found" in desc or "chat_id is empty" in desc:
+        return "Message your bot once (tap Start) so Telegram creates the chat, then retry."
+    if code == 400 and "chat not found" in desc:
+        return "Invalid TELEGRAM_CHAT_ID — use the numeric id from @userinfobot."
+    return ""
 
 
 class TelegramNotifier:
@@ -23,8 +50,11 @@ class TelegramNotifier:
             token: Telegram Bot API token (get from @BotFather)
             chat_id: Your Telegram chat ID (get from @userinfobot)
         """
-        self.token = token or os.environ.get("TELEGRAM_BOT_TOKEN", "")
-        self.chat_id = chat_id or os.environ.get("TELEGRAM_CHAT_ID", "")
+        raw_token = token if token is not None else os.environ.get("TELEGRAM_BOT_TOKEN", "")
+        raw_chat = chat_id if chat_id is not None else os.environ.get("TELEGRAM_CHAT_ID", "")
+        # Strip whitespace / newlines (common .env copy-paste issues)
+        self.token = str(raw_token).strip().strip('"').strip("'")
+        self.chat_id = str(raw_chat).strip().strip('"').strip("'")
         self.api_url = f"https://api.telegram.org/bot{self.token}"
         self._last_signal_time = {}  # Track last alert per asset to avoid spam
 
@@ -61,6 +91,9 @@ class TelegramNotifier:
                 return True
             else:
                 print(f"❌ Telegram API error: {response.text}")
+                hint = _telegram_error_hint(response)
+                if hint:
+                    print(f"   💡 {hint}")
                 return False
         except Exception as e:
             print(f"❌ Failed to send Telegram message: {e}")
@@ -83,9 +116,6 @@ class TelegramNotifier:
         Returns:
             Formatted message string
         """
-        import datetime
-        from zoneinfo import ZoneInfo
-        
         # Emoji based on signal type
         emoji = {
             SignalType.BUY: "🟢",
@@ -130,8 +160,9 @@ class TelegramNotifier:
 
         # Timestamp
         if include_timestamp:
-            ist = ZoneInfo("Asia/Kolkata")
-            timestamp = datetime.datetime.now(ist).strftime("%Y-%m-%d %I:%M %p IST")
+            timestamp = datetime.datetime.now(ZoneInfo("Asia/Kolkata")).strftime(
+                "%Y-%m-%d %I:%M %p IST"
+            )
             lines.append("")
             lines.append(f"_Generated: {timestamp}_")
 
@@ -211,11 +242,9 @@ class TelegramNotifier:
         Returns:
             True if message sent successfully
         """
-        import datetime
-        from zoneinfo import ZoneInfo
-        
-        ist = ZoneInfo("Asia/Kolkata")
-        timestamp = datetime.datetime.now(ist).strftime("%Y-%m-%d %I:%M %p IST")
+        timestamp = datetime.datetime.now(ZoneInfo("Asia/Kolkata")).strftime(
+            "%Y-%m-%d %I:%M %p IST"
+        )
         
         # Find top signals
         actionable = [r for r in results if r.signal != SignalType.HOLD]

@@ -17,6 +17,21 @@ from typing import List, Optional
 
 from zoneinfo import ZoneInfo
 
+
+def _load_dotenv() -> None:
+    """Load .env from project root so TELEGRAM_* and other vars are available."""
+    try:
+        from dotenv import load_dotenv
+
+        root = os.path.dirname(os.path.abspath(__file__))
+        env_path = os.path.join(root, ".env")
+        load_dotenv(env_path)
+    except ImportError:
+        pass
+
+
+_load_dotenv()
+
 from config import MarketType, SignalType
 from data_fetcher import (
     fetch_btc_dominance,

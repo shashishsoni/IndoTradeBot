@@ -123,22 +123,33 @@ python main.py auto -i 15 -t -m equity crypto
 
 ### Environment Variables
 
-Create a `.env` file (copy from `.env.example`) or set environment variables:
+**`.env` in the project folder** (same folder as `main.py`) is **loaded automatically** when you run the app — no need to export variables manually, as long as you have `python-dotenv` installed (`pip install -r requirements.txt`).
+
+Example `.env` (no spaces around `=`; no quotes needed unless the value has spaces):
+
+```env
+TELEGRAM_BOT_TOKEN=123456789:AA...your_token
+TELEGRAM_CHAT_ID=123456789
+```
+
+If Telegram still says “not configured”, check: **file is named `.env`**, it lives next to `main.py`, you **restarted** the process after editing, and you ran **`pip install python-dotenv`**.
+
+Alternatively set variables in the shell for that session only:
 
 ```powershell
-# Windows
+# Windows PowerShell
 $env:TELEGRAM_BOT_TOKEN="your_bot_token"
 $env:TELEGRAM_CHAT_ID="your_chat_id"
-
-# Then run
 python main.py auto --telegram
 ```
 
 ### Telegram Setup
 
 1. **Create Bot**: Message @BotFather on Telegram, use /newbot command
-2. **Get Chat ID**: Message @userinfobot to get your chat ID
-3. **Configure**: Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID environment variables
+2. **Get Chat ID**: Open Telegram **as your personal account** and message **@userinfobot** — copy the numeric **Id** (e.g. `123456789`).  
+   - Do **not** use another bot’s id or your bot’s username as “chat id” — if you see `403 Forbidden: bots can't send messages to bots`, your `TELEGRAM_CHAT_ID` is wrong.
+3. **First contact**: Open your new bot in Telegram and tap **Start** once so the bot can message you.
+4. **Configure**: Add `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` to `.env` **or** set them as environment variables (see above)
 
 ### What Happens in Auto Mode
 

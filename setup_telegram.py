@@ -7,7 +7,15 @@ import os
 import sys
 
 # Add project root to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_root = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _root)
+
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(os.path.join(_root, ".env"))
+except ImportError:
+    pass
 
 from notifier import TelegramNotifier
 
