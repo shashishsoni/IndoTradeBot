@@ -7,8 +7,10 @@ AUTOMATED MODE:
     python main.py auto --interval 5   # Scan every 5 minutes
     python main.py auto --telegram     # Enable Telegram alerts
 
-RENDER FREE WEB SERVICE (HTTP on $PORT + bot in background):
+RENDER FREE WEB SERVICE — same behavior as `auto`, plus HTTP on $PORT:
     python main.py serve -i 5 -t -m equity crypto
+    # Equivalent to: python main.py auto -i 5 -t -m equity crypto
+    # (adds only / and /health so Render Web Service port checks pass)
 """
 
 import datetime
@@ -21,6 +23,16 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import List, Optional
 
 from zoneinfo import ZoneInfo
+
+
+def _configure_server_logging() -> None:
+    """Line-buffer stdout/stderr on PaaS so background-thread prints appear in dashboard logs."""
+    if os.environ.get("RENDER") or os.environ.get("PORT"):
+        try:
+            sys.stdout.reconfigure(line_buffering=True)
+            sys.stderr.reconfigure(line_buffering=True)
+        except (AttributeError, OSError):
+            pass
 
 
 def _load_dotenv() -> None:
@@ -36,6 +48,7 @@ def _load_dotenv() -> None:
 
 
 _load_dotenv()
+_configure_server_logging()
 
 from config import MarketType, SignalType
 from data_fetcher import (
@@ -616,10 +629,20 @@ def run_daemon_mode(
     if telegram_enabled:
         notifier = TelegramNotifier(token=token, chat_id=chat_id)
         if notifier.is_configured():
-            print("✅ Telegram notifications enabled")
+            print("✅ Telegram notifications enabled", flush=True)
             notifier.test_connection()
+            # Proves delivery to your chat (getMe alone does not message you)
+            notifier.send_plain_text(
+                "IndoTradeBot: daemon started on server.\n"
+                f"Scan interval: {interval_minutes} min.\n"
+                "You will get a detailed report after each scan when symbols return data."
+            )
         else:
-            print("⚠️ Telegram not configured. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID")
+            print(
+                "⚠️ Telegram not configured. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID "
+                "(Render: Environment → add both as secrets)",
+                flush=True,
+            )
     
     # Default markets
     if markets is None:
@@ -635,16 +658,16 @@ def run_daemon_mode(
     if not market_types:
         market_types = [MarketType.INDIA_EQUITY, MarketType.CRYPTO]
     
-    print(f"\n{'='*60}")
-    print(f"🤖 TRADING SIGNAL DAEMON STARTED")
-    print(f"{'='*60}")
-    print(f"📊 Scan Interval: {interval_minutes} minutes")
-    print(f"📈 Markets: {[m.value for m in market_types]}")
-    print(f"🔔 Telegram: {'Enabled' if telegram_enabled else 'Disabled'}")
-    print(f"🕐 Started: {datetime.datetime.now(IST).strftime('%Y-%m-%d %I:%M %p IST')}")
-    print(f"⏰ Smart Schedule: {'Enabled' if smart_schedule else 'Disabled'}")
-    print(f"\nPress Ctrl+C to stop")
-    print(f"{'='*60}\n")
+    print(f"\n{'='*60}", flush=True)
+    print(f"🤖 TRADING SIGNAL DAEMON STARTED", flush=True)
+    print(f"{'='*60}", flush=True)
+    print(f"📊 Scan Interval: {interval_minutes} minutes", flush=True)
+    print(f"📈 Markets: {[m.value for m in market_types]}", flush=True)
+    print(f"🔔 Telegram: {'Enabled' if telegram_enabled else 'Disabled'}", flush=True)
+    print(f"🕐 Started: {datetime.datetime.now(IST).strftime('%Y-%m-%d %I:%M %p IST')}", flush=True)
+    print(f"⏰ Smart Schedule: {'Enabled' if smart_schedule else 'Disabled'}", flush=True)
+    print(f"\nPress Ctrl+C to stop", flush=True)
+    print(f"{'='*60}\n", flush=True)
     
     _daemon_running = True
     scan_count = 0

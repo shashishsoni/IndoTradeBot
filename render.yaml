@@ -6,8 +6,11 @@ services:
     name: trading-bot
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python main.py serve -i 5 -t -m equity crypto
+    # -u = unbuffered stdout so Logs tab shows daemon + Telegram status in real time
+    startCommand: python -u main.py serve -i 5 -t -m equity crypto
     envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: TELEGRAM_CHAT_ID
