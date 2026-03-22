@@ -19,6 +19,43 @@ ZEBPAY_SPOT_BASE = os.environ.get("ZEBPAY_SPOT_BASE", "https://sapi.zebpay.com")
 # Approximate INR to USD conversion rate
 INR_TO_USD = 0.012  # ~1 INR = 0.012 USD (83 INR = 1 USD)
 
+# ZebPay supported INR pairs (QuickTrade)
+_DEFAULT_MAP: Dict[str, str] = {
+    # Major pairs
+    "BTCUSDT": "BTC-INR",
+    "ETHUSDT": "ETH-INR",
+    "BNBUSDT": "BNB-INR",
+    # Top altcoins
+    "SOLUSDT": "SOL-INR",
+    "XRPUSDT": "XRP-INR",
+    "ADAUSDT": "ADA-INR",
+    "DOGEUSDT": "DOGE-INR",
+    "DOTUSDT": "DOT-INR",
+    "LINKUSDT": "LINK-INR",
+    "AVAXUSDT": "AVAX-INR",
+    "MATICUSDT": "MATIC-INR",
+    "NEARUSDT": "NEAR-INR",
+    # More alts
+    "ATOMUSDT": "ATOM-INR",
+    "LTCUSDT": "LTC-INR",
+    "UNIUSDT": "UNI-INR",
+    "FILUSDT": "FIL-INR",
+    "XTZUSDT": "XTZ-INR",
+    "EOSUSDT": "EOS-INR",
+    "THETAUSDT": "THETA-INR",
+    "ALGOUSDT": "ALGO-INR",
+    "FTMUSDT": "FTM-INR",
+    "SANDUSDT": "SAND-INR",
+    "MANAUSDT": "MANA-INR",
+    "AAVEUSDT": "AAVE-INR",
+    "MKRUSDT": "MKR-INR",
+    "SHIBUSDT": "SHIB-INR",
+    "TRXUSDT": "TRX-INR",
+    "APTUSDT": "APT-INR",
+    "ARBUSDT": "ARB-INR",
+    "OPUSDT": "OP-INR",
+}
+
 # Default quote for auto-mapped pairs (BTCUSDT -> BTC-INR)
 _DEFAULT_QUOTE = os.environ.get("ZEBPAY_QUOTE", "INR").upper()
 
@@ -168,3 +205,45 @@ def fetch_zebpay_klines(
         return df
 
     return None
+
+
+def fetch_zebpay_ticker(symbol: str) -> Optional[Dict]:
+    """
+    Fetch real-time ticker from ZebPay.
+    Returns: {bid, ask, last, volume_24h, high_24h, low_24h, change_24h}
+    """
+    zeb_pair = binance_symbol_to_zebpay(symbol)
+    url = f"{ZEBPAY_SPOT_BASE}/api/v2/market/ticker"
+    
+    params = {"symbol": zeb_pair}
+    
+    try:
+        resp = requests.get(url, params=params, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            ticker = data.get("data", {})
+            
+            return {
+                "symbol": symbol,
+                "bid": float(ticker.get("bid", 0)) * INR_TO_USD,
+                "ask": float(ticker.get("ask", 0)) * INR_TO_USD,
+                "last": float(ticker.get("last", 0)) * INR_TO_USD,
+                "volume_24h": float(ticker.get("volume24h", 0)),
+                "high_24h": float(ticker.get("high24h", 0)) * INR_TO_USD,
+                "low_24h": float(ticker.get("low24h", 0)) * INR_TO_USD,
+                "change_24h": float(ticker.get("priceChangePercent", 0)),
+                "source": "zebpay_inr",
+            }
+    except Exception as e:
+        print(f"  ⚠ {symbol}: ZebPay ticker error: {e}")
+    return None
+
+
+def get_zebpay_supported_pairs() -> List[str]:
+    """Return list of supported ZebPay trading pairs."""
+    return list(_DEFAULT_MAP.keys())
+
+
+def is_zebpay_supported(symbol: str) -> bool:
+    """Check if symbol is available on ZebPay."""
+    return symbol.upper() in _DEFAULT_MAP

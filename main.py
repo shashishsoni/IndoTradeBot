@@ -135,9 +135,19 @@ EQUITY_WATCHLIST = [
     "WIPRO", "HCLTECH", "TATAMOTORS", "TATASTEEL", "ADANIENT",
 ]
 
+# Indian Market Watchlists
+EQUITY_WATCHLIST = [
+    # Nifty 50 stocks
+    "RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK", "SBIN",
+    "BHARTIARTL", "BAJFINANCE", "HINDUNILVR", "ITC", "KOTAKBANK",
+    "LT", "M&M", "SUNPHARMA", "TITAN", "ADANIPORTS",
+    "ASIANPAINT", "AXISBANK", "BAJAJ-AUTO", "CIPLA", "DRREDDY",
+]
+
+# Remove old CRYPTO_WATCHLIST - using ZebPay only when needed
+# Just keep a minimal crypto list for reference
 CRYPTO_WATCHLIST = [
-    "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
-    "ADAUSDT", "AVAXUSDT", "DOTUSDT", "MATICUSDT", "LINKUSDT",
+    "BTC", "ETH", "BNB", "SOL", "XRP",  # ZebPay INR pairs
 ]
 
 

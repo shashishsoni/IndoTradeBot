@@ -1,6 +1,7 @@
 """
 Telegram Notification Module for Trading Signal Analyzer.
 Sends alerts when BUY/SELL signals are detected.
+Includes Indian regulatory disclaimers and probability calculations.
 """
 
 import datetime
@@ -10,6 +11,77 @@ import time
 from typing import List, Optional, TYPE_CHECKING
 
 import requests
+
+# Indian regulatory disclaimer
+INDIAN_DISCLAIMER = """
+⚠️ REGULATORY DISCLAIMER (India)
+─────────────────────────────────
+• This is algorithmic analysis ONLY — NOT financial advice.
+• SEBI registration: NOT HELD. This is not a registered Investment Advisor.
+• Indian equity: Subject to SEBI regulations. Crypto: Not legally recognized as currency in India (RBI advisory 2018).
+• Trade at your own risk. Past performance ≠ future results.
+• Always verify with a SEBI-registered advisor before trading.
+
+🔞 Not for minors or prohibited persons.
+"""
+
+
+def calculate_signal_probability(
+    confidence: int,
+    rsi: float,
+    ema_trend: bool,
+    volume_spike: bool,
+    market: str = "crypto",
+) -> dict:
+    """
+    Calculate probability-based signal metrics.
+    Returns estimated success probability based on indicator confluence.
+    """
+    base_prob = confidence * 10  # 10-100
+    
+    # Adjustments
+    adjustments = 0
+    
+    # RSI extremes are more reliable
+    if rsi < 30 or rsi > 70:
+        adjustments += 5  # Oversold/overbought more reliable
+    elif 40 < rsi < 60:
+        adjustments -= 5  # Neutral zone less reliable
+    
+    # EMA trend confirmation
+    if ema_trend:
+        adjustments += 3
+    
+    # Volume confirmation
+    if volume_spike:
+        adjustments += 2
+    
+    # Market-specific adjustments
+    if market == "crypto":
+        adjustments -= 3  # Higher volatility = lower reliability
+    elif market == "equity":
+        adjustments += 2  # More stable
+    
+    success_prob = min(95, max(10, base_prob + adjustments))
+    
+    # Risk level
+    if success_prob >= 70:
+        risk_level = "LOW"
+    elif success_prob >= 50:
+        risk_level = "MEDIUM"
+    else:
+        risk_level = "HIGH"
+    
+    return {
+        "success_probability": success_prob,
+        "risk_level": risk_level,
+        "confidence_score": confidence,
+        "factors": {
+            "rsi_signal": "oversold" if rsi < 30 else "overbought" if rsi > 70 else "neutral",
+            "ema_trend": ema_trend,
+            "volume_confirmation": volume_spike,
+        }
+    }
 
 if TYPE_CHECKING:
     from risk_manager import RiskState

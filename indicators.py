@@ -1,6 +1,7 @@
 """
 Technical indicator calculations.
 Priority order: EMA crossovers → RSI → OBV/Volume → ATR/BB → MACD → S/R levels.
+Includes extended indicators: Stochastic, VWAP, Ichimoku, ADX, CCI, Williams %R
 """
 
 from dataclasses import dataclass
@@ -9,6 +10,10 @@ from typing import Optional, Tuple
 import numpy as np
 import pandas as pd
 import ta
+from ta.volatility import BollingerBands, AverageTrueRange
+from ta.trend import EMAIndicator, MACD, ADXIndicator, IchimokuIndicator
+from ta.momentum import RSIIndicator, StochasticOscillator, WilliamsRIndicator, ROCIndicator
+from ta.volume import VolumeWeightedAveragePrice, OnBalanceVolumeIndicator
 
 from config import (
     ATR_PERIOD,

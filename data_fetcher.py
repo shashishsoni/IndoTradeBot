@@ -47,20 +47,17 @@ def fetch_crypto_data(
     """
     Fetch OHLCV: Binance public API by default, or ZebPay Spot if CRYPTO_DATA_SOURCE=zebpay.
     """
-    source = os.environ.get("CRYPTO_DATA_SOURCE", "binance").lower().strip()
-    if source == "zebpay":
-        from zebpay_client import fetch_zebpay_klines
-
-        df_z = fetch_zebpay_klines(symbol, interval=interval, limit=limit)
-        if df_z is not None and not df_z.empty:
-            return df_z
-        fallback_ok = os.environ.get("ZEBPAY_FALLBACK_BINANCE", "1").lower() in (
-            "1",
-            "true",
-            "yes",
-        )
-        if not fallback_ok:
-            return None
+    # ZebPay only - no Binance fallback
+    # ZebPay is the primary source for crypto (INR pairs)
+    from zebpay_client import fetch_zebpay_klines
+    
+    df = fetch_zebpay_klines(symbol, interval=interval, limit=limit)
+    if df is not None and not df.empty:
+        return df
+    
+    # If ZebPay fails, return None (no Binance fallback)
+    print(f"  ⚠ {symbol}: ZebPay unavailable - crypto data not available")
+    return None
 
     url = "https://api.binance.com/api/v3/klines"
     params = {"symbol": symbol.upper(), "interval": interval, "limit": limit}
