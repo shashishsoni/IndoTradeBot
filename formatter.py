@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 from config import MarketType, SignalType, TradeSignal
 from market_context import MarketContextReport
 from risk_manager import RiskState, calculate_position_size
+from zebpay_client import format_zebpay_inr_price
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -28,7 +29,7 @@ def _fmt_price(value: float, currency: str) -> str:
         if value >= 1:
             return f"${value:,.2f}"
         return f"${value:,.6f}"
-    return f"₹{value:,.2f}"
+    return format_zebpay_inr_price(value)
 
 
 def format_signal_report(

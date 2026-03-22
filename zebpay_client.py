@@ -280,6 +280,126 @@ def resolve_crypto_watchlist(timeout: int = 20) -> Tuple[List[str], Dict[str, An
     return out, diag
 
 
+# Map short Xpress names → exchange baseAsset (ZebPay often uses 1000* for meme units)
+_base_resolve_cache: Dict[str, str] = {}
+
+# When both BASE and 1000BASE exist on Open INR, prefer 1000* (matches ZebPay app rows).
+_MEME_PREFER_1000: frozenset[str] = frozenset(
+    {
+        "BONK",
+        "PEPE",
+        "SHIB",
+        "FLOKI",
+        "NEIRO",
+        "MEME",
+        "MEW",
+        "DOGS",
+        "TURBO",
+        "ELON",
+        "MOG",
+        "HMSTR",
+        "MEMEFI",
+        "WIN",
+        "SLP",
+        "HOT",
+        "XEC",
+        "DENT",
+        "NOT",
+        "BTTC",
+        "CHEEMS",
+        "RATS",
+        "SATS",
+        "LUNC",
+        "BABYDOGE",
+    }
+)
+
+
+def resolve_open_inr_base_asset(watchlist_base: str) -> str:
+    """
+    Map watchlist base (e.g. BONK) to exchange Open INR baseAsset (often 1000BONK).
+
+    The app UI may show "BONK" while the API pair is 1000BONK-INR — without this,
+    klines/ticker can return empty or near-zero series and reports show ₹0.00.
+
+    Also: if both PEPE and 1000PEPE exist, prefer 1000PEPE for meme names (same as app).
+    """
+    w = watchlist_base.upper().strip()
+    if not w:
+        return w
+    if w in _base_resolve_cache:
+        return _base_resolve_cache[w]
+
+    open_bases = set(fetch_zebpay_inr_base_assets())
+    if not open_bases:
+        _base_resolve_cache[w] = w
+        return w
+
+    # 1) Meme: prefer 1000* when listed (even if short name also exists — avoids ₹0.00)
+    if w in _MEME_PREFER_1000:
+        k1000 = f"1000{w}"
+        if k1000 in open_bases:
+            _base_resolve_cache[w] = k1000
+            return k1000
+
+    # 2) Exact match (already scaled like 1000BONK, 1MBABYDOGE, or BTC)
+    if w in open_bases:
+        _base_resolve_cache[w] = w
+        return w
+
+    # 3) Prefix fallbacks for any short name
+    for prefix in ("1000", "1M", "1000000"):
+        cand = f"{prefix}{w}"
+        if cand in open_bases:
+            _base_resolve_cache[w] = cand
+            return cand
+
+    # 4) Strip leading 1000 if API uses short base only
+    if w.startswith("1000") and len(w) > 4:
+        short = w[4:]
+        if short in open_bases:
+            _base_resolve_cache[w] = short
+            return short
+
+    _base_resolve_cache[w] = w
+    return w
+
+
+def format_zebpay_inr_price(value: float) -> str:
+    """
+    Human-readable INR for ZebPay quotes — avoids ₹0.00 when price is sub-paisa
+    (common for meme pairs quoted per small unit).
+    """
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return "₹—"
+    if v != v:  # NaN
+        return "₹—"
+    if v >= 1e7:
+        return f"₹{v / 1e7:.2f}Cr"
+    if v >= 1e5:
+        return f"₹{v / 1e5:.2f}L"
+    if v >= 1000:
+        return f"₹{v:,.0f}"
+    if v >= 1:
+        return f"₹{v:,.2f}"
+    if v >= 0.01:
+        s = f"{v:.4f}".rstrip("0").rstrip(".")
+        return f"₹{s}"
+    if v > 0:
+        s = f"{v:.10f}".rstrip("0").rstrip(".")
+        return f"₹{s}"
+    return "₹0"
+
+
+def format_trade_price_line(currency_symbol: str, value: float) -> str:
+    """Single price for reports (₹ uses adaptive precision)."""
+    if currency_symbol == "₹":
+        return format_zebpay_inr_price(value)
+    return f"{currency_symbol}{value:,.2f}"
+
+
 def format_crypto_watchlist_summary(diag: Dict[str, Any]) -> str:
     """One line for console / report footer."""
     if diag.get("source") == "CRYPTO_WATCHLIST":
@@ -315,10 +435,12 @@ def watchlist_symbol_to_zebpay(symbol: str) -> str:
         base = s[:-4]
         if base + "USDT" in _DEFAULT_MAP:
             return _DEFAULT_MAP[base + "USDT"]
-        return f"{base}-{_DEFAULT_QUOTE}"
+        rb = resolve_open_inr_base_asset(base)
+        return f"{rb}-{_DEFAULT_QUOTE}"
 
-    # Bare base: BTC -> BTC-INR
-    return f"{s}-{_DEFAULT_QUOTE}"
+    # Bare base: BTC -> BTC-INR (or 1000BONK-INR when API uses scaled contract)
+    rb = resolve_open_inr_base_asset(s)
+    return f"{rb}-{_DEFAULT_QUOTE}"
 
 
 _INTERVAL_MAP = {

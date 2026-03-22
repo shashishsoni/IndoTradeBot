@@ -4,7 +4,7 @@ Market depth — ZebPay Spot ticker (INR prices).
 
 from typing import Dict, Optional
 
-from zebpay_client import fetch_zebpay_ticker
+from zebpay_client import fetch_zebpay_ticker, format_trade_price_line
 
 
 def fetch_market_depth(symbol: str) -> Optional[Dict]:
@@ -46,9 +46,9 @@ def format_depth_report(depth: Dict, currency: str = "₹") -> str:
     lines = [
         f"\n📊 Market Depth — {depth['symbol']}",
         "=" * 40,
-        f"Last Price: {currency}{depth['last']:,.2f}",
-        f"Bid:        {currency}{depth['bid']:,.2f}",
-        f"Ask:        {currency}{depth['ask']:,.2f}",
+        f"Last Price: {format_trade_price_line(currency, depth['last'])}",
+        f"Bid:        {format_trade_price_line(currency, depth['bid'])}",
+        f"Ask:        {format_trade_price_line(currency, depth['ask'])}",
         f"Spread:     {depth['spread']:.2f} ({depth['spread_pct']:.3f}%)",
         f"24h Volume: {depth['volume_24h']:,.2f}",
     ]

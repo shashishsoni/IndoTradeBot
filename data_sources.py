@@ -321,28 +321,11 @@ ZEBPAY_PAIRS_USDT = {
 def fetch_zebpay_crypto(symbol: str, period: str = "3mo") -> Optional[pd.DataFrame]:
     """
     Fetch crypto data from ZebPay Spot (INR) public klines.
+    Uses zebpay_client (1000BONK-style base resolution + klines).
     """
     from zebpay_client import fetch_zebpay_klines
-    
-    # Map symbol to ZebPay pair - handle both BTC and BTCUSDT formats
-    clean_sym = symbol.upper().replace("-INR", "")
-    
-    # First try direct mapping
-    zeb_pair = ZEBPAY_PAIRS.get(clean_sym)
-    if not zeb_pair:
-        # Try with USDT suffix
-        if not symbol.upper().endswith("USDT"):
-            zeb_pair = ZEBPAY_PAIRS.get(clean_sym + "USDT")
-        else:
-            zeb_pair = ZEBPAY_PAIRS.get(symbol.upper())
-    
-    if not zeb_pair:
-        print(f"  ⚠ {symbol}: Not available on ZebPay")
-        return None
-    
-    # Use the original symbol - fetch_zebpay_klines handles the conversion
-    df = fetch_zebpay_klines(symbol, interval="1d")
-    return df
+
+    return fetch_zebpay_klines(symbol, interval="1d")
 
 
 # ==================== WRAPPER FUNCTION ====================

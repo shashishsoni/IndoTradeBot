@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 from config import SignalType, TradeSignal
 from risk_manager import RiskState
 from formatter import format_signal_report
+from zebpay_client import format_trade_price_line, format_zebpay_inr_price
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -66,14 +67,8 @@ def _sort_by_confidence(signals: Sequence[TradeSignal]) -> List[TradeSignal]:
 
 
 def _fmt_inr_compact(value: float) -> str:
-    """Short ₹ for Telegram (L/Cr for large crypto prices)."""
-    if value >= 1e7:
-        return f"₹{value / 1e7:.2f}Cr"
-    if value >= 1e5:
-        return f"₹{value / 1e5:.2f}L"
-    if value >= 1000:
-        return f"₹{value:,.0f}"
-    return f"₹{value:,.2f}"
+    """Short ₹ for Telegram (L/Cr for large prices; extra decimals for meme quotes)."""
+    return format_zebpay_inr_price(value)
 
 
 def _fmt_money(currency_symbol: str, value: float) -> str:
@@ -145,8 +140,8 @@ def format_ranked_opportunities(
                 c = s.currency_symbol
                 blocks.append(f"  {i}. {s.asset}  ·  {s.confidence}/10")
                 blocks.append(
-                    f"     Entry {c}{s.entry_low:,.2f}–{s.entry_high:,.2f}  ·  "
-                    f"SL {c}{s.stop_loss:,.2f}  ·  T1 {c}{s.target_1:,.2f}"
+                    f"     Entry {format_trade_price_line(c, s.entry_low)}–{format_trade_price_line(c, s.entry_high)}  ·  "
+                    f"SL {format_trade_price_line(c, s.stop_loss)}  ·  T1 {format_trade_price_line(c, s.target_1)}"
                 )
             blocks.append(f"  ⭐ Top: {buys[0].asset}")
         else:
@@ -160,8 +155,8 @@ def format_ranked_opportunities(
                 c = s.currency_symbol
                 blocks.append(f"  {i}. {s.asset}  ·  {s.confidence}/10")
                 blocks.append(
-                    f"     Entry {c}{s.entry_low:,.2f}–{s.entry_high:,.2f}  ·  "
-                    f"SL {c}{s.stop_loss:,.2f}"
+                    f"     Entry {format_trade_price_line(c, s.entry_low)}–{format_trade_price_line(c, s.entry_high)}  ·  "
+                    f"SL {format_trade_price_line(c, s.stop_loss)}"
                 )
             blocks.append(f"  ⭐ Top: {sells[0].asset}")
         else:
@@ -186,8 +181,8 @@ def format_ranked_opportunities(
             c = s.currency_symbol
             blocks.append(
                 f"   {i}. {s.asset} — confidence {s.confidence}/10 | "
-                f"entry zone {c}{s.entry_low:,.2f}–{c}{s.entry_high:,.2f} | "
-                f"SL {c}{s.stop_loss:,.2f} | T1 {c}{s.target_1:,.2f}"
+                f"entry zone {format_trade_price_line(c, s.entry_low)}–{format_trade_price_line(c, s.entry_high)} | "
+                f"SL {format_trade_price_line(c, s.stop_loss)} | T1 {format_trade_price_line(c, s.target_1)}"
             )
         top = buys[0]
         blocks.append("")
@@ -206,8 +201,8 @@ def format_ranked_opportunities(
             c = s.currency_symbol
             blocks.append(
                 f"   {i}. {s.asset} — confidence {s.confidence}/10 | "
-                f"entry zone {c}{s.entry_low:,.2f}–{c}{s.entry_high:,.2f} | "
-                f"SL {c}{s.stop_loss:,.2f} | T1 {c}{s.target_1:,.2f}"
+                f"entry zone {format_trade_price_line(c, s.entry_low)}–{format_trade_price_line(c, s.entry_high)} | "
+                f"SL {format_trade_price_line(c, s.stop_loss)} | T1 {format_trade_price_line(c, s.target_1)}"
             )
         top = sells[0]
         blocks.append("")

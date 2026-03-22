@@ -12,6 +12,8 @@ from typing import List, Optional, TYPE_CHECKING
 
 import requests
 
+from zebpay_client import format_trade_price_line
+
 # Indian regulatory disclaimer
 INDIAN_DISCLAIMER = """
 ⚠️ REGULATORY DISCLAIMER (India)
@@ -286,10 +288,10 @@ class TelegramNotifier:
             f"*Timeframe:* {signal.timeframe.value}",
             f"*Confidence:* {signal.confidence}/10",
             "",
-            f"*📊 Entry Zone:* {signal.currency_symbol}{signal.entry_low:,.2f} – {signal.currency_symbol}{signal.entry_high:,.2f}",
-            f"*🛡️ Stop Loss:* {signal.currency_symbol}{signal.stop_loss:,.2f} ({signal.risk_pct}%)",
-            f"*🎯 Target 1:* {signal.currency_symbol}{signal.target_1:,.2f} (R:R = 1:{signal.rr_t1})",
-            f"*🎯 Target 2:* {signal.currency_symbol}{signal.target_2:,.2f} (R:R = 1:{signal.rr_t2})",
+            f"*📊 Entry Zone:* {format_trade_price_line(signal.currency_symbol, signal.entry_low)} – {format_trade_price_line(signal.currency_symbol, signal.entry_high)}",
+            f"*🛡️ Stop Loss:* {format_trade_price_line(signal.currency_symbol, signal.stop_loss)} ({signal.risk_pct}%)",
+            f"*🎯 Target 1:* {format_trade_price_line(signal.currency_symbol, signal.target_1)} (R:R = 1:{signal.rr_t1})",
+            f"*🎯 Target 2:* {format_trade_price_line(signal.currency_symbol, signal.target_2)} (R:R = 1:{signal.rr_t2})",
             "",
             f"*❌ Invalidation:* {signal.invalidation}",
             "",
@@ -425,8 +427,8 @@ class TelegramNotifier:
                 "",
                 f"*🏆 TOP SIGNAL:* {emoji} {top_signal.asset}",
                 f"   Signal: *{top_signal.signal.value}*",
-                f"   Entry: {top_signal.currency_symbol}{top_signal.entry_mid:,.2f}",
-                f"   SL: {top_signal.currency_symbol}{top_signal.stop_loss:,.2f}",
+                f"   Entry: {format_trade_price_line(top_signal.currency_symbol, top_signal.entry_mid)}",
+                f"   SL: {format_trade_price_line(top_signal.currency_symbol, top_signal.stop_loss)}",
                 f"   Confidence: {top_signal.confidence}/10",
             ])
         elif buy_count == 0 and sell_count == 0:

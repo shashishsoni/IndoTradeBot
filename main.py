@@ -76,6 +76,7 @@ from risk_manager import (
 )
 from scan_report import format_detailed_scan_report
 from signal_engine import generate_signal
+from zebpay_client import format_trade_price_line
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -274,7 +275,7 @@ def scan_watchlist(
             c = sig.currency_symbol
             progress_lines.append(
                 f"  {emoji} {symbol:<12} | {sig.signal.value:<4} | "
-                f"Conf {sig.confidence}/10 | {c}{sig.entry_mid:,.2f}"
+                f"Conf {sig.confidence}/10 | {format_trade_price_line(c, sig.entry_mid)}"
             )
         except Exception as e:
             progress_lines.append(f"  ❌ {symbol:<12} | Error: {e}")
