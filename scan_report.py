@@ -47,6 +47,19 @@ STRONG_SIGNAL_GUIDE = """
    which names to research first; then verify on charts, news, and your risk rules.
 """
 
+# Short version for Telegram (mobile-friendly, no wide box-drawing)
+STRONG_SIGNAL_GUIDE_TELEGRAM = """
+▸ HOW TO READ THIS
+  • BUY / SELL = directional edge from indicators; HOLD = no clear edge.
+  • Confidence 1–10 = factor alignment (not a guarantee).
+
+▸ STRONG SETUPS (typical TA)
+  • Buy: trend + RSI momentum + MACD + volume; use stops.
+  • Sell: opposite + distribution volume.
+
+⚠️ Not advice — verify on charts before trading.
+"""
+
 
 def _sort_by_confidence(signals: Sequence[TradeSignal]) -> List[TradeSignal]:
     return sorted(signals, key=lambda s: s.confidence, reverse=True)
@@ -73,8 +86,23 @@ def format_entry_focus_table(
     results: Sequence[TradeSignal],
     *,
     zebpay_inr: bool = False,
+    telegram_format: bool = False,
 ) -> str:
-    """Compact entry lines for Telegram (₹ / L / Cr)."""
+    """Entry zone table — console uses box chars; Telegram uses stacked lines."""
+    if telegram_format:
+        sub = "ZebPay INR · ₹" if zebpay_inr else "₹"
+        lines = ["", f"▸ ENTRY ({sub})", ""]
+        for s in _sort_by_confidence(list(results)):
+            c = s.currency_symbol
+            sig = s.signal.value
+            entry_txt = f"{_fmt_money(c, s.entry_low)} – {_fmt_money(c, s.entry_high)}"
+            sl_txt = _fmt_money(c, s.stop_loss)
+            lines.append(f"  {s.asset}  ·  {sig}  ·  {s.confidence}/10")
+            lines.append(f"     Zone: {entry_txt}")
+            lines.append(f"     SL:   {sl_txt}")
+            lines.append("")
+        return "\n".join(lines).rstrip() + "\n"
+
     title = (
         "┌─ ENTRY — ZebPay Spot INR (₹) — zone / SL ─────────────────────┐"
         if zebpay_inr
@@ -98,13 +126,59 @@ def format_entry_focus_table(
     return "\n".join(lines)
 
 
-def format_ranked_opportunities(results: Sequence[TradeSignal]) -> str:
+def format_ranked_opportunities(
+    results: Sequence[TradeSignal],
+    *,
+    telegram_format: bool = False,
+) -> str:
     """Rank BUY and SELL separately by confidence; explain top picks."""
     buys = _sort_by_confidence([r for r in results if r.signal == SignalType.BUY])
     sells = _sort_by_confidence([r for r in results if r.signal == SignalType.SELL])
     holds = _sort_by_confidence([r for r in results if r.signal == SignalType.HOLD])
 
     blocks = []
+
+    if telegram_format:
+        if buys:
+            blocks.append("▸ BUY IDEAS")
+            for i, s in enumerate(buys, 1):
+                c = s.currency_symbol
+                blocks.append(f"  {i}. {s.asset}  ·  {s.confidence}/10")
+                blocks.append(
+                    f"     Entry {c}{s.entry_low:,.2f}–{s.entry_high:,.2f}  ·  "
+                    f"SL {c}{s.stop_loss:,.2f}  ·  T1 {c}{s.target_1:,.2f}"
+                )
+            blocks.append(f"  ⭐ Top: {buys[0].asset}")
+        else:
+            blocks.append("▸ BUY: none")
+
+        blocks.append("")
+
+        if sells:
+            blocks.append("▸ SELL IDEAS")
+            for i, s in enumerate(sells, 1):
+                c = s.currency_symbol
+                blocks.append(f"  {i}. {s.asset}  ·  {s.confidence}/10")
+                blocks.append(
+                    f"     Entry {c}{s.entry_low:,.2f}–{s.entry_high:,.2f}  ·  "
+                    f"SL {c}{s.stop_loss:,.2f}"
+                )
+            blocks.append(f"  ⭐ Top: {sells[0].asset}")
+        else:
+            blocks.append("▸ SELL: none")
+
+        blocks.append("")
+
+        if holds and not buys and not sells:
+            top_h = holds[0]
+            blocks.append(
+                f"▸ ALL HOLD — watch {top_h.asset} ({top_h.confidence}/10)"
+            )
+        elif holds:
+            blocks.append(
+                f"▸ HOLD ({len(holds)}) — top: {holds[0].asset} ({holds[0].confidence}/10)"
+            )
+        return "\n".join(blocks)
 
     if buys:
         blocks.append("🟢 HIGHEST-CONFIDENCE BUY IDEAS (consider these first for longs)")
@@ -168,55 +242,91 @@ def format_detailed_scan_report(
     include_guide: bool = True,
     include_full_top_report: bool = True,
     crypto_watchlist_diag: Optional[Dict[str, Any]] = None,
+    telegram_format: bool = False,
 ) -> str:
     """
     Full textual report after a watchlist scan: rankings, table, education, optional full signal for top actionable.
+    Set telegram_format=True for mobile-friendly layout (Telegram).
     """
     if not results:
         return "\n⚠️ No symbols returned data — check network or symbols.\n"
 
     is_crypto = _is_crypto_scan(market_name)
-    lines = [
-        "",
-        "╔" + "═" * 68 + "╗",
-        f"║  DETAILED SCAN — {market_name.upper():<48} ║",
-        "╚" + "═" * 68 + "╝",
-    ]
+    tg = telegram_format
+    sep = "──────────────" if tg else None
+
+    if tg:
+        lines = [
+            "",
+            sep,
+            f"📊 SCAN · {market_name.upper()}",
+            sep,
+            "",
+        ]
+    else:
+        lines = [
+            "",
+            "╔" + "═" * 68 + "╗",
+            f"║  DETAILED SCAN — {market_name.upper():<48} ║",
+            "╚" + "═" * 68 + "╝",
+        ]
+
     if is_crypto:
-        lines.append(
-            "💱 Data: ZebPay Spot · INR pairs (BTC-INR, …) — ₹ = Indian Rupees from API."
-        )
+        if tg:
+            lines.extend(
+                [
+                    "💱 ZebPay Spot · INR (₹ from API)",
+                    "",
+                ]
+            )
+        else:
+            lines.append(
+                "💱 Data: ZebPay Spot · INR pairs (BTC-INR, …) — ₹ = Indian Rupees from API."
+            )
         if crypto_watchlist_diag:
             from zebpay_client import format_crypto_watchlist_summary
 
-            lines.append(f"  ⚙️ {format_crypto_watchlist_summary(crypto_watchlist_diag)}")
+            if tg:
+                lines.append(f"⚙️ {format_crypto_watchlist_summary(crypto_watchlist_diag)}")
+            else:
+                lines.append(f"  ⚙️ {format_crypto_watchlist_summary(crypto_watchlist_diag)}")
             xs = crypto_watchlist_diag.get("symbols") or []
             if xs:
-                if len(xs) <= 30:
+                if len(xs) <= (20 if tg else 30):
                     listing = ", ".join(xs)
                 else:
-                    listing = ", ".join(xs[:30]) + f" … (+{len(xs) - 30} more)"
-                lines.append(f"  📋 Watchlist ({len(xs)}): {listing}")
+                    lim = 20 if tg else 30
+                    listing = ", ".join(xs[:lim]) + f" … (+{len(xs) - lim} more)"
+                label = f"Symbols ({len(xs)})" if tg else f"  📋 Watchlist ({len(xs)})"
+                lines.append(f"{label}:\n{listing}" if tg else f"{label}: {listing}")
             miss = crypto_watchlist_diag.get("xpress_not_on_exchange_api") or []
             if miss:
-                shown = miss[:15]
-                tail = " …" if len(miss) > 15 else ""
-                lines.append(
-                    f"  ⏭️ Xpress names not Open INR on API ({len(miss)}): "
-                    f"{', '.join(shown)}{tail}"
-                )
+                shown = miss[: (8 if tg else 15)]
+                tail = " …" if len(miss) > len(shown) else ""
+                if tg:
+                    lines.append(
+                        f"⏭️ Not on Open INR API ({len(miss)}): {', '.join(shown)}{tail}"
+                    )
+                else:
+                    lines.append(
+                        f"  ⏭️ Xpress names not Open INR on API ({len(miss)}): "
+                        f"{', '.join(shown)}{tail}"
+                    )
         lines.append("")
+
     lines.extend(
         [
-            format_ranked_opportunities(results),
+            format_ranked_opportunities(results, telegram_format=tg),
             "",
-            format_entry_focus_table(results, zebpay_inr=is_crypto),
+            format_entry_focus_table(
+                results, zebpay_inr=is_crypto, telegram_format=tg
+            ),
             "",
         ]
     )
 
     if include_guide:
-        lines.append(STRONG_SIGNAL_GUIDE)
+        lines.append(STRONG_SIGNAL_GUIDE_TELEGRAM if tg else STRONG_SIGNAL_GUIDE)
 
     actionable = _sort_by_confidence(
         [r for r in results if r.signal != SignalType.HOLD]
@@ -225,24 +335,47 @@ def format_detailed_scan_report(
         top = actionable[0]
         now = datetime.datetime.now(IST)
         lines.append("")
-        lines.append("═" * 70)
-        lines.append(f" FULL REPORT — HIGHEST-CONFIDENCE ACTIONABLE: {top.asset} ")
-        lines.append("═" * 70)
+        if tg:
+            lines.extend([sep, ""])  # break before full signal (title is inside format_signal_report)
+        else:
+            lines.extend(
+                [
+                    "═" * 70,
+                    f" FULL REPORT — HIGHEST-CONFIDENCE ACTIONABLE: {top.asset} ",
+                    "═" * 70,
+                ]
+            )
         lines.append(
-            format_signal_report(top, context=None, risk_state=risk_state, now=now)
+            format_signal_report(
+                top,
+                context=None,
+                risk_state=risk_state,
+                now=now,
+                telegram_format=tg,
+            )
         )
     elif include_full_top_report and not actionable:
-        # All HOLD: show full report for highest confidence name for detail
         best = _sort_by_confidence(results)[0]
         now = datetime.datetime.now(IST)
         lines.append("")
-        lines.append("═" * 70)
+        if tg:
+            lines.extend([sep, ""])
+        else:
+            lines.extend(
+                [
+                    "═" * 70,
+                    f" FULL REPORT — HIGHEST CONFIDENCE (HOLD): {best.asset} — for levels only ",
+                    "═" * 70,
+                ]
+            )
         lines.append(
-            f" FULL REPORT — HIGHEST CONFIDENCE (HOLD): {best.asset} — for levels only "
-        )
-        lines.append("═" * 70)
-        lines.append(
-            format_signal_report(best, context=None, risk_state=None, now=now)
+            format_signal_report(
+                best,
+                context=None,
+                risk_state=None,
+                now=now,
+                telegram_format=tg,
+            )
         )
 
     return "\n".join(lines)

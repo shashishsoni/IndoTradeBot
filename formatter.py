@@ -36,12 +36,88 @@ def format_signal_report(
     context: Optional[MarketContextReport] = None,
     risk_state: Optional[RiskState] = None,
     now: Optional[datetime.datetime] = None,
+    *,
+    telegram_format: bool = False,
 ) -> str:
     if now is None:
         now = datetime.datetime.now(IST)
 
     c = signal.currency_symbol
     timestamp = now.strftime("%d %b %Y / %I:%M %p IST")
+
+    if telegram_format:
+        sep = "──────────────"
+        title = (
+            f"📋 {signal.asset} · HOLD — levels"
+            if signal.signal == SignalType.HOLD
+            else f"📋 {signal.asset} · {signal.signal.value}"
+        )
+        lines = [
+            "",
+            sep,
+            title,
+            sep,
+            f"🕐 {timestamp}",
+            "",
+            f"{SIGNAL_EMOJI[signal.signal]}  ·  Confidence {signal.confidence}/10",
+            f"⏱ {signal.timeframe.value}",
+        ]
+        if signal.market == MarketType.CRYPTO:
+            lines.append("📍 ZebPay Spot · INR")
+        lines.extend(
+            [
+                "",
+                "PRICES",
+                f"  Entry: {_fmt_price(signal.entry_low, c)} – {_fmt_price(signal.entry_high, c)}",
+                f"  Stop:  {_fmt_price(signal.stop_loss, c)}  (risk {signal.risk_pct}%)",
+                f"  T1:    {_fmt_price(signal.target_1, c)}  (R:R 1:{signal.rr_t1})",
+                f"  T2:    {_fmt_price(signal.target_2, c)}  (R:R 1:{signal.rr_t2})",
+                "",
+                f"⚠ Invalidation: {signal.invalidation}",
+                "",
+                "WHY",
+            ]
+        )
+        for i, tech in enumerate(signal.reasoning_technical, 1):
+            lines.append(f"  {i}. {tech}")
+        lines.append(f"  • {signal.reasoning_fundamental}")
+
+        if risk_state and signal.signal != SignalType.HOLD:
+            pos_mod = context.position_size_modifier if context else 1.0
+            sizing = calculate_position_size(
+                risk_state.capital,
+                signal.entry_mid,
+                signal.stop_loss,
+                pos_mod,
+            )
+            lines.extend(
+                [
+                    "",
+                    "SIZE (2% risk)",
+                    f"  Capital {c}{risk_state.capital:,.0f}  ·  Risk {c}{sizing['risk_amount']:,.0f}",
+                    f"  Units {sizing['units']:,.4f}  ·  Value {c}{sizing['position_value']:,.0f}",
+                ]
+            )
+
+        all_notes = list(signal.risk_notes)
+        if context:
+            all_notes.extend(context.warnings)
+        if all_notes:
+            lines.append("")
+            lines.append("NOTES")
+            for note in all_notes:
+                lines.append(f"  ⚠ {note}")
+
+        lines.extend(
+            [
+                "",
+                sep,
+                "Not financial advice. Your capital at risk.",
+                sep,
+                "",
+            ]
+        )
+        return "\n".join(lines)
 
     lines = [
         "",

@@ -248,9 +248,10 @@ class TelegramNotifier:
             include_guide=include_guide,
             include_full_top_report=include_full_top_report,
             crypto_watchlist_diag=crypto_watchlist_diag,
+            telegram_format=True,
         )
-        title = f"📊 Detailed scan — {market_name}\n\n"
-        return self.send_plain_text(title + body)
+        # Body already has a clear header (telegram_format); avoid duplicate title lines.
+        return self.send_plain_text(body)
 
     def format_signal_message(
         self, 
