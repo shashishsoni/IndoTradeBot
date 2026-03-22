@@ -1,12 +1,12 @@
-# Render.com deployment configuration
-# Deploy this bot as a background worker on Render.com (free tier)
+# Render Blueprint — Free Web Service: HTTP on $PORT + bot in background thread.
+# Use: python main.py serve (see DEPLOY_RENDER.md).
 
 services:
-  - type: worker
+  - type: web
     name: trading-bot
-    env: python
+    runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python main.py auto -i 5 -t -m equity crypto
+    startCommand: python main.py serve -i 5 -t -m equity crypto
     envVars:
       - key: TELEGRAM_BOT_TOKEN
         sync: false

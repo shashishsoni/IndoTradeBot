@@ -184,6 +184,14 @@ python main.py auto --telegram
 - Console still shows the same detailed output locally
 - Press Ctrl+C to stop
 
+## Deploy on Render
+
+**Free Web Service:** use **`python main.py serve ...`** — it binds HTTP to **`$PORT`** (`/` and `/health` return `OK`) and runs the same scan loop as `auto` in a **background thread**.
+
+- Plain **`python main.py auto`** on a Web Service will fail (*“No open ports detected”*) because there is no HTTP listener.
+- See **`DEPLOY_RENDER.md`** for step-by-step; **`render.yaml`** uses `type: web` and `serve`.
+- If your plan includes **Background Workers**, you can use `auto` with `type: worker` instead (no HTTP needed).
+
 ## Risk Management
 
 - Max 2% capital at risk per trade

@@ -6,13 +6,18 @@ AUTOMATED MODE:
     python main.py auto --interval 15  # Scan every 15 minutes
     python main.py auto --interval 5   # Scan every 5 minutes
     python main.py auto --telegram     # Enable Telegram alerts
+
+RENDER FREE WEB SERVICE (HTTP on $PORT + bot in background):
+    python main.py serve -i 5 -t -m equity crypto
 """
 
 import datetime
 import os
 import signal
 import sys
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import List, Optional
 
 from zoneinfo import ZoneInfo
@@ -577,6 +582,7 @@ def run_daemon_mode(
     token: str = None,
     chat_id: str = None,
     smart_schedule: bool = True,
+    register_signals: bool = True,
 ):
     """
     Run the bot in daemon mode - continuously scanning at intervals with smart scheduling.
@@ -588,17 +594,20 @@ def run_daemon_mode(
         token: Telegram bot token
         chat_id: Telegram chat ID
         smart_schedule: Enable smart scheduling (market hours only)
+        register_signals: Set False when daemon runs inside a worker thread (e.g. web serve mode)
     """
     global _daemon_running
-    
-    # Setup signal handlers for graceful shutdown
-    def signal_handler(sig, frame):
-        global _daemon_running
-        print("\n🛑 Received stop signal. Finishing current scan...")
-        _daemon_running = False
-    
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
+
+    # Setup signal handlers for graceful shutdown (main thread only)
+    if register_signals:
+
+        def signal_handler(sig, frame):
+            global _daemon_running
+            print("\n🛑 Received stop signal. Finishing current scan...")
+            _daemon_running = False
+
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
     
     state = RiskState.load()
     
@@ -756,6 +765,119 @@ def parse_auto_args(args_list):
     return parser.parse_args(clean_args)
 
 
+def parse_serve_args(args_list):
+    """Same as auto/daemon args, for `python main.py serve` (Render free Web Service)."""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Trading Signal Analyzer — Web mode (HTTP + bot in background)",
+        prog="python main.py serve",
+    )
+    parser.add_argument(
+        "--interval", "-i",
+        type=int,
+        default=15,
+        help="Scan interval in minutes (default: 15)",
+    )
+    parser.add_argument(
+        "--markets", "-m",
+        nargs="+",
+        default=["equity", "crypto"],
+        choices=["equity", "crypto"],
+        help="Markets to scan (default: equity crypto)",
+    )
+    parser.add_argument(
+        "--telegram", "-t",
+        action="store_true",
+        help="Enable Telegram notifications",
+    )
+    parser.add_argument(
+        "--token",
+        type=str,
+        default=os.environ.get("TELEGRAM_BOT_TOKEN", ""),
+        help="Telegram bot token (or set TELEGRAM_BOT_TOKEN env)",
+    )
+    parser.add_argument(
+        "--chat-id",
+        type=str,
+        default=os.environ.get("TELEGRAM_CHAT_ID", ""),
+        help="Telegram chat ID (or set TELEGRAM_CHAT_ID env)",
+    )
+    parser.add_argument(
+        "--no-schedule",
+        action="store_true",
+        help="Disable smart scheduling (run 24/7)",
+    )
+    clean_args = [a for a in args_list[2:] if a.lower() != "serve"]
+    return parser.parse_args(clean_args)
+
+
+class _RenderHealthHandler(BaseHTTPRequestHandler):
+    """Minimal HTTP for Render free Web Service (must listen on $PORT)."""
+
+    def log_message(self, format, *args):
+        return  # keep logs quiet
+
+    def do_GET(self):
+        if self.path in ("/", "/health"):
+            body = b"OK - IndoTradeBot\n"
+            self.send_response(200)
+            self.send_header("Content-type", "text/plain; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+
+def run_web_server_with_bot(
+    interval_minutes: int = 15,
+    markets: List[str] = None,
+    telegram_enabled: bool = False,
+    token: Optional[str] = None,
+    chat_id: Optional[str] = None,
+    smart_schedule: bool = True,
+) -> None:
+    """
+    Run HTTP on 0.0.0.0:$PORT and the trading daemon in a background thread.
+    Use this on Render free Web Service (workers may be paid on some plans).
+    """
+    port = int(os.environ.get("PORT", "10000"))
+    server: Optional[HTTPServer] = None
+
+    def on_signal(signum, frame):
+        global _daemon_running
+        _daemon_running = False
+        if server is not None:
+            threading.Thread(target=server.shutdown, daemon=True).start()
+
+    signal.signal(signal.SIGINT, on_signal)
+    signal.signal(signal.SIGTERM, on_signal)
+
+    def _run_bot():
+        run_daemon_mode(
+            interval_minutes=interval_minutes,
+            markets=markets,
+            telegram_enabled=telegram_enabled,
+            token=token,
+            chat_id=chat_id,
+            smart_schedule=smart_schedule,
+            register_signals=False,
+        )
+
+    bot_thread = threading.Thread(target=_run_bot, name="indo-bot-daemon", daemon=True)
+    bot_thread.start()
+
+    server = HTTPServer(("0.0.0.0", port), _RenderHealthHandler)
+    print(f"\n🌐 HTTP health: http://0.0.0.0:{port}/  (GET / or /health)")
+    print("   Bot daemon runs in background — use free Web Service on Render.\n")
+    try:
+        server.serve_forever()
+    finally:
+        server.server_close()
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         cmd = sys.argv[1].lower()
@@ -773,6 +895,16 @@ if __name__ == "__main__":
             state = RiskState.load()
             print(scan_watchlist(market, state))
         # Check for auto/daemon mode
+        elif cmd == "serve":
+            args = parse_serve_args(sys.argv)
+            run_web_server_with_bot(
+                interval_minutes=args.interval,
+                markets=args.markets,
+                telegram_enabled=args.telegram,
+                token=args.token if args.token else None,
+                chat_id=args.chat_id if args.chat_id else None,
+                smart_schedule=not args.no_schedule,
+            )
         elif cmd in ("auto", "daemon", "run"):
             args = parse_auto_args(sys.argv)
             run_daemon_mode(
