@@ -213,6 +213,9 @@ def generate_signal(
     crossover = detect_ema_crossover(df)
     timeframe = _determine_timeframe(df)
     currency = "$" if market == MarketType.CRYPTO else "₹"
+    
+    # DEBUG: Log actual price values
+    print(f"  📊 {symbol}: close={close}, atr={snap.atr}, rsi={snap.rsi}")
 
     # ── Determine signal direction ──
     buy_score = 0
