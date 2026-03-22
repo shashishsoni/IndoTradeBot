@@ -73,6 +73,10 @@ def fetch_crypto_data(
         print(f"  ❌ {symbol}: Binance API error: {e}")
         return None
 
+    # DEBUG: Print first row to verify data
+    if raw and len(raw) > 0:
+        print(f"  📊 {symbol}: First kline: open={raw[0][1]}, close={raw[0][4]}")
+
     df = pd.DataFrame(raw, columns=[
         "open_time", "open", "high", "low", "close", "volume",
         "close_time", "quote_vol", "trades", "taker_buy_base",

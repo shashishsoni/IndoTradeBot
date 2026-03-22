@@ -16,6 +16,9 @@ import requests
 
 ZEBPAY_SPOT_BASE = os.environ.get("ZEBPAY_SPOT_BASE", "https://sapi.zebpay.com").rstrip("/")
 
+# Approximate INR to USD conversion rate
+INR_TO_USD = 0.012  # ~1 INR = 0.012 USD (83 INR = 1 USD)
+
 # Default quote for auto-mapped pairs (BTCUSDT -> BTC-INR)
 _DEFAULT_QUOTE = os.environ.get("ZEBPAY_QUOTE", "INR").upper()
 
@@ -147,11 +150,21 @@ def fetch_zebpay_klines(
         if not data:
             continue
 
+        # DEBUG: Print first row to verify data
+        if data and len(data) > 0:
+            print(f"  📊 {symbol} (ZebPay INR): First kline: open={data[0][1]}, close={data[0][4]}")
+
         df = _parse_klines_payload(data)
         if df is None or df.empty:
             continue
         if len(df) > limit:
             df = df.tail(limit)
+        
+        # ZebPay returns INR - convert to USD for consistent display
+        for col in ["open", "high", "low", "close"]:
+            df[col] = df[col] * INR_TO_USD
+        # Volume stays the same (it's the token amount)
+        
         return df
 
     return None
