@@ -482,13 +482,20 @@ def _scan_market(
     results = []
     now = datetime.datetime.now(IST)
     
+    print(f"  📋 Symbols to scan: {watchlist}")
+    
     for symbol in watchlist:
         try:
             df = fetch_data(symbol, market)
-            if df is None or len(df) < 50:
+            if df is None:
+                print(f"  ⚠ {symbol}: No data returned")
+                continue
+            if len(df) < 50:
+                print(f"  ⚠ {symbol}: Insufficient data ({len(df)} bars, need 50)")
                 continue
             sig = generate_signal(df, symbol, market)
             if sig is None:
+                print(f"  ⚠ {symbol}: Signal generation returned None")
                 continue
             results.append(sig)
 

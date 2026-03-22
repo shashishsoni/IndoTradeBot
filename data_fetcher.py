@@ -1,8 +1,9 @@
 """
 Data fetching layer for Indian equities (via yfinance) and crypto (via public APIs).
+Crypto default: Binance public klines. Optional: ZebPay Spot (INR) via CRYPTO_DATA_SOURCE=zebpay.
 """
 
-import datetime
+import os
 from typing import Optional
 
 import pandas as pd
@@ -28,11 +29,13 @@ def fetch_equity_data(
         ticker = yf.Ticker(symbol)
         df = ticker.history(period=period, interval=interval)
         if df.empty:
+            print(f"  ⚠ {symbol}: yfinance returned empty DataFrame")
             return None
         df.index = pd.to_datetime(df.index)
         df = df.rename(columns=str.lower)
         return df
-    except Exception:
+    except Exception as e:
+        print(f"  ❌ {symbol}: yfinance error: {e}")
         return None
 
 
@@ -42,8 +45,23 @@ def fetch_crypto_data(
     limit: int = 200,
 ) -> Optional[pd.DataFrame]:
     """
-    Fetch OHLCV data from Binance public API (no auth needed).
+    Fetch OHLCV: Binance public API by default, or ZebPay Spot if CRYPTO_DATA_SOURCE=zebpay.
     """
+    source = os.environ.get("CRYPTO_DATA_SOURCE", "binance").lower().strip()
+    if source == "zebpay":
+        from zebpay_client import fetch_zebpay_klines
+
+        df_z = fetch_zebpay_klines(symbol, interval=interval, limit=limit)
+        if df_z is not None and not df_z.empty:
+            return df_z
+        fallback_ok = os.environ.get("ZEBPAY_FALLBACK_BINANCE", "1").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        if not fallback_ok:
+            return None
+
     url = "https://api.binance.com/api/v3/klines"
     params = {"symbol": symbol.upper(), "interval": interval, "limit": limit}
 
@@ -51,7 +69,8 @@ def fetch_crypto_data(
         resp = requests.get(url, params=params, timeout=15)
         resp.raise_for_status()
         raw = resp.json()
-    except Exception:
+    except Exception as e:
+        print(f"  ❌ {symbol}: Binance API error: {e}")
         return None
 
     df = pd.DataFrame(raw, columns=[

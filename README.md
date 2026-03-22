@@ -192,6 +192,14 @@ python main.py auto --telegram
 - See **`DEPLOY_RENDER.md`** for step-by-step; **`render.yaml`** uses `type: web` and `serve`.
 - If your plan includes **Background Workers**, you can use `auto` with `type: worker` instead (no HTTP needed).
 
+## Optional: ZebPay (public market data)
+
+This project is **signal-only** by default (no live orders). To pull **crypto OHLCV from ZebPay Spot (INR)** instead of Binance, set:
+
+`CRYPTO_DATA_SOURCE=zebpay`
+
+See **`docs/ZEBPAY.md`** for env vars, symbol mapping (`BTCUSDT` → `BTC-INR`), and limits. **Order placement** is not implemented; use ZebPay’s private API only in a separate, audited module if you add it later.
+
 ## Risk Management
 
 - Max 2% capital at risk per trade
