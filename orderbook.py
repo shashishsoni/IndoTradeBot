@@ -6,7 +6,7 @@ No Binance - Indian market data only
 import requests
 from typing import Dict, Optional
 
-from zebpay_client import INR_TO_USD
+from zebpay_client import PAISA_TO_USD
 
 
 def fetch_market_depth(symbol: str) -> Optional[Dict]:
@@ -24,9 +24,9 @@ def fetch_market_depth(symbol: str) -> Optional[Dict]:
         if resp.status_code == 200:
             data = resp.json().get("data", {})
             
-            bid = float(data.get("bid", 0)) * INR_TO_USD
-            ask = float(data.get("ask", 0)) * INR_TO_USD
-            last = float(data.get("last", 0)) * INR_TO_USD
+            bid = float(data.get("bid", 0)) * PAISA_TO_USD
+            ask = float(data.get("ask", 0)) * PAISA_TO_USD
+            last = float(data.get("last", 0)) * PAISA_TO_USD
             volume = float(data.get("volume24h", 0))
             
             spread = ask - bid if bid and ask else 0

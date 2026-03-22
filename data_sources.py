@@ -289,7 +289,7 @@ def get_market_status() -> Dict[str, str]:
 
 # ==================== CRYPTO (ZEBPAY ONLY - NO BINANCE) ====================
 
-# ZebPay supported pairs (INR)
+# ZebPay supported pairs (INR) - maps BTC to BTC-INR
 ZEBPAY_PAIRS = {
     "BTC": "BTC-INR",
     "ETH": "ETH-INR",
@@ -308,6 +308,15 @@ ZEBPAY_PAIRS = {
     "UNI": "UNI-INR",
 }
 
+# Also support USDT suffix
+ZEBPAY_PAIRS_USDT = {
+    "BTCUSDT": "BTC-INR",
+    "ETHUSDT": "ETH-INR",
+    "BNBUSDT": "BNB-INR",
+    "SOLUSDT": "SOL-INR",
+    "XRPUSDT": "XRP-INR",
+}
+
 
 def fetch_zebpay_crypto(symbol: str, period: str = "3mo") -> Optional[pd.DataFrame]:
     """
@@ -315,14 +324,23 @@ def fetch_zebpay_crypto(symbol: str, period: str = "3mo") -> Optional[pd.DataFra
     """
     from zebpay_client import fetch_zebpay_klines
     
-    # Map symbol to ZebPay pair
-    clean_sym = symbol.upper().replace("USDT", "").replace("-INR", "")
+    # Map symbol to ZebPay pair - handle both BTC and BTCUSDT formats
+    clean_sym = symbol.upper().replace("-INR", "")
+    
+    # First try direct mapping
     zeb_pair = ZEBPAY_PAIRS.get(clean_sym)
+    if not zeb_pair:
+        # Try with USDT suffix
+        if not symbol.upper().endswith("USDT"):
+            zeb_pair = ZEBPAY_PAIRS.get(clean_sym + "USDT")
+        else:
+            zeb_pair = ZEBPAY_PAIRS.get(symbol.upper())
     
     if not zeb_pair:
         print(f"  ⚠ {symbol}: Not available on ZebPay")
         return None
     
+    # Use the original symbol - fetch_zebpay_klines handles the conversion
     df = fetch_zebpay_klines(symbol, interval="1d")
     return df
 

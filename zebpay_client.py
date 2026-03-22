@@ -16,16 +16,21 @@ import requests
 
 ZEBPAY_SPOT_BASE = os.environ.get("ZEBPAY_SPOT_BASE", "https://sapi.zebpay.com").rstrip("/")
 
-# Approximate INR to USD conversion rate
+# ZebPay returns prices in PAISA (1/100 of INR)
+# Example: 7915800 paisa = ₹79,158 = ~$950 USD
+# To convert to INR: divide by 100
+# To convert to USD: divide by 100 then by ~83 (exchange rate)
+PAISA_TO_INR = 0.01
 INR_TO_USD = 0.012  # ~1 INR = 0.012 USD (83 INR = 1 USD)
+PAISA_TO_USD = PAISA_TO_INR * INR_TO_USD  # = 0.00012
 
 # ZebPay supported INR pairs (QuickTrade)
+# Maps: BTCUSDT -> BTC-INR, BTC -> BTC-INR, etc.
 _DEFAULT_MAP: Dict[str, str] = {
-    # Major pairs
+    # USDT suffix format
     "BTCUSDT": "BTC-INR",
     "ETHUSDT": "ETH-INR",
     "BNBUSDT": "BNB-INR",
-    # Top altcoins
     "SOLUSDT": "SOL-INR",
     "XRPUSDT": "XRP-INR",
     "ADAUSDT": "ADA-INR",
@@ -35,25 +40,16 @@ _DEFAULT_MAP: Dict[str, str] = {
     "AVAXUSDT": "AVAX-INR",
     "MATICUSDT": "MATIC-INR",
     "NEARUSDT": "NEAR-INR",
-    # More alts
     "ATOMUSDT": "ATOM-INR",
     "LTCUSDT": "LTC-INR",
     "UNIUSDT": "UNI-INR",
-    "FILUSDT": "FIL-INR",
-    "XTZUSDT": "XTZ-INR",
-    "EOSUSDT": "EOS-INR",
-    "THETAUSDT": "THETA-INR",
-    "ALGOUSDT": "ALGO-INR",
-    "FTMUSDT": "FTM-INR",
-    "SANDUSDT": "SAND-INR",
-    "MANAUSDT": "MANA-INR",
-    "AAVEUSDT": "AAVE-INR",
-    "MKRUSDT": "MKR-INR",
-    "SHIBUSDT": "SHIB-INR",
-    "TRXUSDT": "TRX-INR",
-    "APTUSDT": "APT-INR",
-    "ARBUSDT": "ARB-INR",
-    "OPUSDT": "OP-INR",
+    # Also support bare symbol format
+    "BTC": "BTC-INR",
+    "ETH": "ETH-INR",
+    "BNB": "BNB-INR",
+    "SOL": "SOL-INR",
+    "XRP": "XRP-INR",
+    "ADA": "ADA-INR",
 }
 
 # Default quote for auto-mapped pairs (BTCUSDT -> BTC-INR)
@@ -74,14 +70,26 @@ _DEFAULT_MAP: Dict[str, str] = {
 
 
 def binance_symbol_to_zebpay(symbol: str) -> str:
-    """Map watchlist symbol (BTCUSDT) to ZebPay pair (BTC-INR)."""
+    """Map watchlist symbol (BTCUSDT or BTC) to ZebPay pair (BTC-INR)."""
     s = symbol.upper().strip()
-    if s in _DEFAULT_MAP:
-        return _DEFAULT_MAP[s]
+    
+    # Handle: BTC, ETH, etc.
+    if s in _DEFAULT_MAP.values():
+        return s
+    
+    # Handle: BTCUSDT, ETHUSDT
     if s.endswith("USDT"):
         base = s[:-4]
+        if base in _DEFAULT_MAP:
+            return _DEFAULT_MAP[base + "USDT"]
         return f"{base}-{_DEFAULT_QUOTE}"
-    return s.replace("_", "-")
+    
+    # Handle: BTC -> BTC-INR
+    for key, val in _DEFAULT_MAP.items():
+        if key.startswith(s):
+            return val
+    
+    return f"{s}-{_DEFAULT_QUOTE}"
 
 
 # Binance kline interval -> ZebPay interval string
@@ -197,9 +205,10 @@ def fetch_zebpay_klines(
         if len(df) > limit:
             df = df.tail(limit)
         
-        # ZebPay returns INR - convert to USD for consistent display
+        # ZebPay returns PAISA (1/100 INR) - convert to USD for consistent display
+        # Example: 7915800 paisa = ₹79,158 → $950
         for col in ["open", "high", "low", "close"]:
-            df[col] = df[col] * INR_TO_USD
+            df[col] = df[col] * PAISA_TO_USD
         # Volume stays the same (it's the token amount)
         
         return df
@@ -223,14 +232,15 @@ def fetch_zebpay_ticker(symbol: str) -> Optional[Dict]:
             data = resp.json()
             ticker = data.get("data", {})
             
+            # ZebPay returns paisa (1/100 INR)
             return {
                 "symbol": symbol,
-                "bid": float(ticker.get("bid", 0)) * INR_TO_USD,
-                "ask": float(ticker.get("ask", 0)) * INR_TO_USD,
-                "last": float(ticker.get("last", 0)) * INR_TO_USD,
+                "bid": float(ticker.get("bid", 0)) * PAISA_TO_USD,
+                "ask": float(ticker.get("ask", 0)) * PAISA_TO_USD,
+                "last": float(ticker.get("last", 0)) * PAISA_TO_USD,
                 "volume_24h": float(ticker.get("volume24h", 0)),
-                "high_24h": float(ticker.get("high24h", 0)) * INR_TO_USD,
-                "low_24h": float(ticker.get("low24h", 0)) * INR_TO_USD,
+                "high_24h": float(ticker.get("high24h", 0)) * PAISA_TO_USD,
+                "low_24h": float(ticker.get("low24h", 0)) * PAISA_TO_USD,
                 "change_24h": float(ticker.get("priceChangePercent", 0)),
                 "source": "zebpay_inr",
             }
