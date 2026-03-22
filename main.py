@@ -129,26 +129,29 @@ ENVIRONMENT VARIABLES:
 """
 
 EQUITY_WATCHLIST = [
-    "RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK",
-    "HINDUNILVR", "ITC", "SBIN", "BHARTIARTL", "KOTAKBANK",
-    "LT", "AXISBANK", "BAJFINANCE", "MARUTI", "TITAN",
-    "WIPRO", "HCLTECH", "TATAMOTORS", "TATASTEEL", "ADANIENT",
-]
-
-# Indian Market Watchlists
-EQUITY_WATCHLIST = [
-    # Nifty 50 stocks
     "RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK", "SBIN",
     "BHARTIARTL", "BAJFINANCE", "HINDUNILVR", "ITC", "KOTAKBANK",
     "LT", "M&M", "SUNPHARMA", "TITAN", "ADANIPORTS",
     "ASIANPAINT", "AXISBANK", "BAJAJ-AUTO", "CIPLA", "DRREDDY",
 ]
 
-# Remove old CRYPTO_WATCHLIST - using ZebPay only when needed
-# Just keep a minimal crypto list for reference
-CRYPTO_WATCHLIST = [
-    "BTC", "ETH", "BNB", "SOL", "XRP",  # ZebPay INR pairs
-]
+
+def get_crypto_watchlist() -> List[str]:
+    """
+    Crypto symbols for ZebPay (bare base: BTC, ETH).
+
+    - Set CRYPTO_WATCHLIST=BTC,ETH,SOL (comma-separated) to override.
+    - Else CRYPTO_WATCHLIST_MODE controls the list:
+        - xpress (default): Xpress-style INR list + QuickTrade MARKET pairs (see zebpay_client).
+        - quicktrade: Open INR pairs with MARKET orders only (~7 symbols, faster scan).
+        - all: every Open INR base from exchangeInfo (capped by CRYPTO_WATCHLIST_MAX).
+    - ZEBPAY_XPRESS_SYMBOLS: optional comma list to replace the built-in Xpress list.
+    - If the API fails, uses a fixed fallback aligned with QuickTrade MARKET pairs.
+    """
+    from zebpay_client import resolve_crypto_watchlist
+
+    syms, _ = resolve_crypto_watchlist()
+    return syms
 
 
 def analyze_asset(
@@ -236,7 +239,13 @@ def scan_watchlist(
     send_telegram: bool = False,
 ) -> str:
     """Scan a full watchlist: rankings, entry table, strong-signal guide, full report for top name."""
-    watchlist = EQUITY_WATCHLIST if market == MarketType.INDIA_EQUITY else CRYPTO_WATCHLIST
+    crypto_diag = None
+    if market == MarketType.INDIA_EQUITY:
+        watchlist = EQUITY_WATCHLIST
+    else:
+        from zebpay_client import resolve_crypto_watchlist
+
+        watchlist, crypto_diag = resolve_crypto_watchlist()
     market_name = "Indian Equity" if market == MarketType.INDIA_EQUITY else "Crypto"
 
     header = (
@@ -244,6 +253,10 @@ def scan_watchlist(
         f"📋 WATCHLIST SCAN — {market_name} ({len(watchlist)} assets)\n"
         f"{'═' * 50}\n"
     )
+    if crypto_diag:
+        from zebpay_client import format_crypto_watchlist_summary
+
+        header += f"  ⚙️ {format_crypto_watchlist_summary(crypto_diag)}\n"
 
     results = []
     progress_lines = []
@@ -279,6 +292,7 @@ def scan_watchlist(
         risk_state=risk_state,
         include_guide=True,
         include_full_top_report=True,
+        crypto_watchlist_diag=crypto_diag,
     )
     out = header + "\n".join(progress_lines) + "\n" + body
 
@@ -291,6 +305,7 @@ def scan_watchlist(
                 risk_state=risk_state,
                 include_guide=True,
                 include_full_top_report=True,
+                crypto_watchlist_diag=crypto_diag,
             )
             out += "\n✅ Same detailed report sent to Telegram.\n"
         else:
@@ -331,7 +346,17 @@ def interactive_loop():
 
         elif cmd == "watchlist":
             print("\n📋 EQUITY WATCHLIST:", ", ".join(EQUITY_WATCHLIST))
-            print("📋 CRYPTO WATCHLIST:", ", ".join(CRYPTO_WATCHLIST))
+            from zebpay_client import format_crypto_watchlist_summary, resolve_crypto_watchlist
+
+            c_syms, c_diag = resolve_crypto_watchlist()
+            print("📋 CRYPTO WATCHLIST:", ", ".join(c_syms))
+            print("   ⚙️", format_crypto_watchlist_summary(c_diag))
+            miss = c_diag.get("xpress_not_on_exchange_api") or []
+            if miss:
+                print(
+                    f"   ⏭️ {len(miss)} configured Xpress bases not Open INR on API (not in scan): "
+                    f"{', '.join(miss[:20])}{' …' if len(miss) > 20 else ''}"
+                )
 
         elif cmd == "capital":
             if len(parts) < 2:
@@ -482,7 +507,13 @@ def _scan_market(
     Returns:
         List of TradeSignal objects
     """
-    watchlist = EQUITY_WATCHLIST if market == MarketType.INDIA_EQUITY else CRYPTO_WATCHLIST
+    crypto_diag = None
+    if market == MarketType.INDIA_EQUITY:
+        watchlist = EQUITY_WATCHLIST
+    else:
+        from zebpay_client import format_crypto_watchlist_summary, resolve_crypto_watchlist
+
+        watchlist, crypto_diag = resolve_crypto_watchlist()
     market_name = "India Equity" if market == MarketType.INDIA_EQUITY else "Crypto"
     
     print(f"\n{'='*50}")
@@ -493,6 +524,8 @@ def _scan_market(
     now = datetime.datetime.now(IST)
     
     print(f"  📋 Symbols to scan: {watchlist}")
+    if crypto_diag:
+        print(f"  ⚙️ {format_crypto_watchlist_summary(crypto_diag)}")
     
     for symbol in watchlist:
         try:
@@ -535,6 +568,7 @@ def _scan_market(
                 risk_state=state,
                 include_guide=not send_notifications,
                 include_full_top_report=True,
+                crypto_watchlist_diag=crypto_diag,
             )
         )
 
@@ -546,6 +580,7 @@ def _scan_market(
             risk_state=state,
             include_guide=True,
             include_full_top_report=True,
+            crypto_watchlist_diag=crypto_diag,
         )
 
     return results

@@ -49,17 +49,23 @@ def format_signal_report(
         f"\U0001f4ca SIGNAL REPORT — {timestamp}",
         SEPARATOR,
         f"ASSET:        {signal.asset}",
-        f"SIGNAL:       {SIGNAL_EMOJI[signal.signal]}",
-        f"ENTRY ZONE:   {_fmt_price(signal.entry_low, c)} – {_fmt_price(signal.entry_high, c)}",
-        f"STOP LOSS:    {_fmt_price(signal.stop_loss, c)}  (Risk: {signal.risk_pct}%)",
-        f"TARGET 1:     {_fmt_price(signal.target_1, c)}  (R:R = 1:{signal.rr_t1})",
-        f"TARGET 2:     {_fmt_price(signal.target_2, c)}  (R:R = 1:{signal.rr_t2})",
-        f"TIMEFRAME:    {signal.timeframe.value}",
-        f"CONFIDENCE:   {signal.confidence}/10",
-        f"INVALIDATION: {signal.invalidation}",
-        "",
-        "REASONING:",
     ]
+    if signal.market == MarketType.CRYPTO:
+        lines.append("SOURCE:       ZebPay Spot · INR (public klines)")
+    lines.extend(
+        [
+            f"SIGNAL:       {SIGNAL_EMOJI[signal.signal]}",
+            f"ENTRY ZONE:   {_fmt_price(signal.entry_low, c)} – {_fmt_price(signal.entry_high, c)}",
+            f"STOP LOSS:    {_fmt_price(signal.stop_loss, c)}  (Risk: {signal.risk_pct}%)",
+            f"TARGET 1:     {_fmt_price(signal.target_1, c)}  (R:R = 1:{signal.rr_t1})",
+            f"TARGET 2:     {_fmt_price(signal.target_2, c)}  (R:R = 1:{signal.rr_t2})",
+            f"TIMEFRAME:    {signal.timeframe.value}",
+            f"CONFIDENCE:   {signal.confidence}/10",
+            f"INVALIDATION: {signal.invalidation}",
+            "",
+            "REASONING:",
+        ]
+    )
 
     for i, tech in enumerate(signal.reasoning_technical, 1):
         lines.append(f"  → Technical {i}: {tech}")

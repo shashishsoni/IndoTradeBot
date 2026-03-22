@@ -26,12 +26,18 @@ from indicators import (
 
 def _round_price(price: float, market: MarketType) -> float:
     if market == MarketType.CRYPTO:
-        if price > 1000:
+        # INR (ZebPay) can be lakhs/crores; USDT can be <1 for alts
+        if price >= 1000:
             return round(price, 2)
         if price > 1:
             return round(price, 4)
         return round(price, 6)
     return round(price, 2)
+
+
+def _crypto_currency_symbol() -> str:
+    """Crypto OHLCV is ZebPay INR — always show ₹ in reports."""
+    return "₹"
 
 
 def _determine_timeframe(df: pd.DataFrame) -> Timeframe:
@@ -212,10 +218,7 @@ def generate_signal(
     support, resistance = find_support_resistance(df)
     crossover = detect_ema_crossover(df)
     timeframe = _determine_timeframe(df)
-    currency = "$" if market == MarketType.CRYPTO else "₹"
-    
-    # DEBUG: Log actual price values
-    print(f"  📊 {symbol}: close={close}, atr={snap.atr}, rsi={snap.rsi}")
+    currency = _crypto_currency_symbol() if market == MarketType.CRYPTO else "₹"
 
     # ── Determine signal direction ──
     buy_score = 0

@@ -236,6 +236,7 @@ class TelegramNotifier:
         risk_state: Optional["RiskState"] = None,
         include_guide: bool = True,
         include_full_top_report: bool = True,
+        crypto_watchlist_diag: Optional[dict] = None,
     ) -> bool:
         """Send the same detailed scan report as the console (rankings, table, guide, full signal)."""
         from scan_report import format_detailed_scan_report
@@ -246,6 +247,7 @@ class TelegramNotifier:
             risk_state=risk_state,
             include_guide=include_guide,
             include_full_top_report=include_full_top_report,
+            crypto_watchlist_diag=crypto_watchlist_diag,
         )
         title = f"📊 Detailed scan — {market_name}\n\n"
         return self.send_plain_text(title + body)

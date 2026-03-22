@@ -1,5 +1,5 @@
 """
-Indian Market Data Sources - No Binance
+Indian market data sources — crypto via ZebPay Spot INR only
 Uses: yfinance, nsetools, and other Indian financial APIs
 """
 
@@ -287,7 +287,7 @@ def get_market_status() -> Dict[str, str]:
     return status
 
 
-# ==================== CRYPTO (ZEBPAY ONLY - NO BINANCE) ====================
+# ==================== CRYPTO (ZEBPAY SPOT INR) ====================
 
 # ZebPay supported pairs (INR) - maps BTC to BTC-INR
 ZEBPAY_PAIRS = {
@@ -320,7 +320,7 @@ ZEBPAY_PAIRS_USDT = {
 
 def fetch_zebpay_crypto(symbol: str, period: str = "3mo") -> Optional[pd.DataFrame]:
     """
-    Fetch crypto data from ZebPay only (no Binance fallback).
+    Fetch crypto data from ZebPay Spot (INR) public klines.
     """
     from zebpay_client import fetch_zebpay_klines
     

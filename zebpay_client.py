@@ -1,36 +1,30 @@
 """
-Optional ZebPay Spot public API (no API keys) for INR / USDT crypto OHLCV.
+Optional ZebPay Spot public API (no API keys) for INR crypto OHLCV.
 
 Docs: https://apidocs.zebpay.com/ — Spot base https://sapi.zebpay.com (v2)
 Reference: https://github.com/zebpay/zebpay-api-references
+
+API prices in klines/ticker are in INR (e.g. BTC-INR close ~8,000,000+), not USDT.
 """
 
 from __future__ import annotations
 
 import os
 import time
-from typing import Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 import requests
 
 ZEBPAY_SPOT_BASE = os.environ.get("ZEBPAY_SPOT_BASE", "https://sapi.zebpay.com").rstrip("/")
 
-# ZebPay returns prices in PAISA (1/100 of INR)
-# Example: 7915800 paisa = ₹79,158 = ~$950 USD
-# To convert to INR: divide by 100
-# To convert to USD: divide by 100 then by ~83 (exchange rate)
-PAISA_TO_INR = 0.01
-INR_TO_USD = 0.012  # ~1 INR = 0.012 USD (83 INR = 1 USD)
-PAISA_TO_USD = PAISA_TO_INR * INR_TO_USD  # = 0.00012
-
-# ZebPay supported INR pairs (QuickTrade)
-# Maps: BTCUSDT -> BTC-INR, BTC -> BTC-INR, etc.
+# Maps: BTCUSDT -> BTC-INR, BTC -> BTC-INR (extend via exchangeInfo)
 _DEFAULT_MAP: Dict[str, str] = {
-    # USDT suffix format
     "BTCUSDT": "BTC-INR",
     "ETHUSDT": "ETH-INR",
     "BNBUSDT": "BNB-INR",
+    "BCHUSDT": "BCH-INR",
+    "BATUSDT": "BAT-INR",
     "SOLUSDT": "SOL-INR",
     "XRPUSDT": "XRP-INR",
     "ADAUSDT": "ADA-INR",
@@ -43,56 +37,290 @@ _DEFAULT_MAP: Dict[str, str] = {
     "ATOMUSDT": "ATOM-INR",
     "LTCUSDT": "LTC-INR",
     "UNIUSDT": "UNI-INR",
-    # Also support bare symbol format
     "BTC": "BTC-INR",
     "ETH": "ETH-INR",
     "BNB": "BNB-INR",
+    "BCH": "BCH-INR",
+    "BAT": "BAT-INR",
     "SOL": "SOL-INR",
     "XRP": "XRP-INR",
     "ADA": "ADA-INR",
 }
 
-# Default quote for auto-mapped pairs (BTCUSDT -> BTC-INR)
 _DEFAULT_QUOTE = os.environ.get("ZEBPAY_QUOTE", "INR").upper()
 
-_DEFAULT_MAP: Dict[str, str] = {
-    "BTCUSDT": "BTC-INR",
-    "ETHUSDT": "ETH-INR",
-    "BNBUSDT": "BNB-INR",
-    "SOLUSDT": "SOL-INR",
-    "XRPUSDT": "XRP-INR",
-    "ADAUSDT": "ADA-INR",
-    "DOGEUSDT": "DOGE-INR",
-    "MATICUSDT": "MATIC-INR",
-    "DOTUSDT": "DOT-INR",
-    "LINKUSDT": "LINK-INR",
-}
+# Cached raw symbol rows from exchangeInfo (shared by INR + QuickTrade helpers)
+_exchange_symbols_cache: Optional[List[dict]] = None
 
 
-def binance_symbol_to_zebpay(symbol: str) -> str:
+def _get_exchange_symbols(timeout: int = 20) -> List[dict]:
+    global _exchange_symbols_cache
+    if _exchange_symbols_cache is not None:
+        return _exchange_symbols_cache
+
+    url = f"{ZEBPAY_SPOT_BASE}/api/v2/ex/exchangeInfo"
+    try:
+        r = requests.get(url, timeout=timeout)
+        r.raise_for_status()
+        payload = r.json()
+        data = payload.get("data") or {}
+        symbols = data.get("symbols") or []
+    except Exception:
+        return []
+
+    _exchange_symbols_cache = symbols
+    return symbols
+
+
+def fetch_zebpay_inr_base_assets(timeout: int = 20) -> List[str]:
+    """
+    GET /api/v2/ex/exchangeInfo — all symbols with quote INR and status Open.
+    Returns sorted unique base symbols (e.g. BTC, ETH).
+    """
+    symbols = _get_exchange_symbols(timeout)
+    if not symbols:
+        return []
+
+    bases: set = set()
+    for s in symbols:
+        if (s.get("status") or "").upper() != "OPEN":
+            continue
+        if (s.get("quoteAsset") or "").upper() != "INR":
+            continue
+        b = s.get("baseAsset")
+        if b:
+            bases.add(str(b).upper())
+
+    return sorted(bases)
+
+
+def fetch_zebpay_quicktrade_bases(timeout: int = 20) -> List[str]:
+    """
+    Bases for **Open** INR pairs that list **MARKET** in `orderTypes`.
+
+    ZebPay’s public `exchangeInfo` does not expose a `quickTrade` flag; the app’s
+    QuickTrade flow uses instant execution, which aligns with **MARKET**-enabled
+    pairs on Spot. Use this as the default crypto watchlist when you want
+    symbols that match QuickTrade-style trading.
+    """
+    symbols = _get_exchange_symbols(timeout)
+    if not symbols:
+        return []
+
+    bases: set = set()
+    for s in symbols:
+        if (s.get("status") or "").upper() != "OPEN":
+            continue
+        if (s.get("quoteAsset") or "").upper() != "INR":
+            continue
+        ots = s.get("orderTypes") or []
+        if "MARKET" not in ots:
+            continue
+        b = s.get("baseAsset")
+        if b:
+            bases.add(str(b).upper())
+
+    return sorted(bases)
+
+
+# ZebPay app **Xpress** (INR) — public API has no `xpress` flag; this list matches
+# the Xpress / “Xpress coin” INR row in the app. Intersected with Open INR pairs.
+# Override entirely: ZEBPAY_XPRESS_SYMBOLS=TURBO,PEPE,SHIB
+ZEBPAY_XPRESS_DEFAULT_BASES: tuple[str, ...] = (
+    "TURBO",
+    "MBL",
+    "PYBOBO",
+    "SLP",
+    "MEW",
+    "MEME",
+    "HOT",
+    "1000CHEEMS",
+    "BOME",
+    "1MBABYDOGE",
+    "NOT",
+    "DENT",
+    "TOSHI",
+    "SPELL",
+    "HMSTR",
+    "MEMEFI",
+    "NEIRO",
+    "FLOKI",
+    "DOGS",
+    "WIN",
+    "X",
+    "XEC",
+    "BONK",
+    "SHIB",
+    "PEPE",
+    "BTTC",
+    "MOG",
+    "ELON",
+)
+
+
+def fetch_zebpay_xpress_bases(timeout: int = 20) -> List[str]:
+    """
+    Curated Xpress INR bases. Only symbols that exist as Open INR in exchangeInfo
+    are returned (preserves app list order). If exchangeInfo fails, returns the
+    raw wanted list so callers can still try klines.
+    """
+    raw = os.environ.get("ZEBPAY_XPRESS_SYMBOLS", "").strip()
+    if raw:
+        wanted = [x.strip().upper() for x in raw.split(",") if x.strip()]
+    else:
+        wanted = list(ZEBPAY_XPRESS_DEFAULT_BASES)
+
+    open_inr = set(fetch_zebpay_inr_base_assets(timeout))
+    if not open_inr:
+        return wanted
+
+    filtered = [b for b in wanted if b in open_inr]
+    return filtered if filtered else wanted
+
+
+def fetch_zebpay_xpress_merged_bases(timeout: int = 20) -> List[str]:
+    """
+    Xpress curated list (intersected with Open INR) + QuickTrade MARKET pairs,
+    deduped — Xpress order first, then remaining MARKET bases (e.g. BTC, ETH).
+    """
+    xp = fetch_zebpay_xpress_bases(timeout)
+    qt = fetch_zebpay_quicktrade_bases(timeout)
+    seen: set[str] = set()
+    out: List[str] = []
+    for b in xp + qt:
+        if b not in seen:
+            seen.add(b)
+            out.append(b)
+    return out
+
+
+def resolve_crypto_watchlist(timeout: int = 20) -> Tuple[List[str], Dict[str, Any]]:
+    """
+    Single source of truth for crypto watchlist + diagnostics (CLI, Telegram, web UI).
+
+    Returns:
+        (symbols_to_scan, diagnostics_dict)
+    """
+    raw = os.environ.get("CRYPTO_WATCHLIST", "").strip()
+    mode = os.environ.get("CRYPTO_WATCHLIST_MODE", "xpress").lower().strip()
+    default_max = "120" if mode == "xpress" else "40"
+    max_n = max(5, min(300, int(os.environ.get("CRYPTO_WATCHLIST_MAX", default_max))))
+
+    quote = os.environ.get("ZEBPAY_QUOTE", "INR").upper()
+
+    diag: Dict[str, Any] = {
+        "data_source": "ZebPay Spot · INR (public klines)",
+        "quote_asset": quote,
+        "mode": mode,
+        "max_cap": max_n,
+    }
+
+    if raw:
+        syms = [x.strip().upper() for x in raw.split(",") if x.strip()]
+        out = syms[:max_n]
+        diag["source"] = "CRYPTO_WATCHLIST"
+        diag["symbols"] = out
+        diag["note"] = "Explicit CRYPTO_WATCHLIST — no Xpress merge."
+        return out, diag
+
+    raw_xp = os.environ.get("ZEBPAY_XPRESS_SYMBOLS", "").strip()
+    if raw_xp:
+        xpress_wanted = [x.strip().upper() for x in raw_xp.split(",") if x.strip()]
+    else:
+        xpress_wanted = list(ZEBPAY_XPRESS_DEFAULT_BASES)
+
+    try:
+        open_inr = fetch_zebpay_inr_base_assets(timeout)
+        xpress_matched = fetch_zebpay_xpress_bases(timeout)
+        qt = fetch_zebpay_quicktrade_bases(timeout)
+        merged = fetch_zebpay_xpress_merged_bases(timeout)
+
+        oset = set(open_inr) if open_inr else set()
+        missing = [b for b in xpress_wanted if oset and b not in oset]
+
+        diag["counts"] = {
+            "xpress_configured": len(xpress_wanted),
+            "xpress_matched_open_inr": len(xpress_matched),
+            "quicktrade_market": len(qt),
+            "merged_before_cap": len(merged),
+            "open_inr_pairs": len(open_inr),
+        }
+        diag["xpress_not_on_exchange_api"] = missing
+        diag["xpress_not_on_exchange_count"] = len(missing)
+
+        bases: Optional[List[str]] = None
+        if mode == "all":
+            bases = fetch_zebpay_inr_base_assets(timeout)
+        elif mode == "quicktrade":
+            bases = fetch_zebpay_quicktrade_bases(timeout)
+            if not bases:
+                bases = fetch_zebpay_inr_base_assets(timeout)
+        else:
+            bases = merged
+            if not bases:
+                bases = fetch_zebpay_quicktrade_bases(timeout)
+            if not bases:
+                bases = fetch_zebpay_inr_base_assets(timeout)
+
+        if bases:
+            final = bases[:max_n]
+            diag["source"] = "zebpay"
+            diag["symbols"] = final
+            diag["truncated_by_cap"] = len(bases) > max_n
+            diag["counts"]["after_cap"] = len(final)
+            return final, diag
+    except Exception as e:
+        diag["api_error"] = str(e)
+
+    fb = ["BAT", "BCH", "BTC", "ETH", "LTC", "SOL", "XRP"]
+    out = fb[:max_n]
+    diag["source"] = "fallback"
+    diag["symbols"] = out
+    diag["note"] = "exchangeInfo/merge failed — static QuickTrade-style list"
+    return out, diag
+
+
+def format_crypto_watchlist_summary(diag: Dict[str, Any]) -> str:
+    """One line for console / report footer."""
+    if diag.get("source") == "CRYPTO_WATCHLIST":
+        return (
+            f"CRYPTO_WATCHLIST · {len(diag.get('symbols', []))} syms · cap {diag.get('max_cap')}"
+        )
+    if diag.get("source") == "fallback":
+        return f"⚠️ fallback · {diag.get('note', '')}"
+    syms = diag.get("symbols") or []
+    cnt = diag.get("counts") or {}
+    miss = int(diag.get("xpress_not_on_exchange_count") or 0)
+    parts = [
+        f"{diag.get('mode')} · cap {diag.get('max_cap')} · {len(syms)} syms",
+        f"Xpress∩API {cnt.get('xpress_matched_open_inr', '?')}/{cnt.get('xpress_configured', '?')}",
+        f"QuickTrade MARKET {cnt.get('quicktrade_market', '?')}",
+    ]
+    if miss:
+        parts.append(f"{miss} Xpress names not Open INR on API (omitted)")
+    return " · ".join(parts)
+
+
+def watchlist_symbol_to_zebpay(symbol: str) -> str:
     """Map watchlist symbol (BTCUSDT or BTC) to ZebPay pair (BTC-INR)."""
     s = symbol.upper().strip()
-    
-    # Handle: BTC, ETH, etc.
+
     if s in _DEFAULT_MAP.values():
         return s
-    
-    # Handle: BTCUSDT, ETHUSDT
+
+    if s in _DEFAULT_MAP:
+        return _DEFAULT_MAP[s]
+
     if s.endswith("USDT"):
         base = s[:-4]
-        if base in _DEFAULT_MAP:
+        if base + "USDT" in _DEFAULT_MAP:
             return _DEFAULT_MAP[base + "USDT"]
         return f"{base}-{_DEFAULT_QUOTE}"
-    
-    # Handle: BTC -> BTC-INR
-    for key, val in _DEFAULT_MAP.items():
-        if key.startswith(s):
-            return val
-    
+
+    # Bare base: BTC -> BTC-INR
     return f"{s}-{_DEFAULT_QUOTE}"
 
 
-# Binance kline interval -> ZebPay interval string
 _INTERVAL_MAP = {
     "1m": "1m",
     "3m": "5m",
@@ -158,12 +386,10 @@ def fetch_zebpay_klines(
     timeout: int = 20,
 ) -> Optional[pd.DataFrame]:
     """
-    Fetch OHLCV from ZebPay Spot public GET /api/v2/market/klines.
-
-    symbol: Binance-style (BTCUSDT) or ZebPay pair (BTC-INR).
-    interval: Binance-style interval string (e.g. 1d, 4h).
+    Fetch OHLCV from ZebPay Spot GET /api/v2/market/klines.
+    Prices are kept in INR (as returned by the API).
     """
-    zeb_pair = binance_symbol_to_zebpay(symbol)
+    zeb_pair = watchlist_symbol_to_zebpay(symbol)
     zeb_iv = _INTERVAL_MAP.get(interval, "1d")
     sec = _seconds_per_zebpay_candle(zeb_iv)
 
@@ -175,7 +401,6 @@ def fetch_zebpay_klines(
 
     url = f"{ZEBPAY_SPOT_BASE}/api/v2/market/klines"
 
-    # API docs mention ms; some payloads use seconds — try both
     for scale in (1000, 1):
         params = {
             "symbol": zeb_pair,
@@ -195,65 +420,54 @@ def fetch_zebpay_klines(
         if not data:
             continue
 
-        # DEBUG: Print first row to verify data
-        if data and len(data) > 0:
-            print(f"  📊 {symbol} (ZebPay INR): First kline: open={data[0][1]}, close={data[0][4]}")
-
         df = _parse_klines_payload(data)
         if df is None or df.empty:
             continue
         if len(df) > limit:
             df = df.tail(limit)
-        
-        # ZebPay returns PAISA (1/100 INR) - convert to USD for consistent display
-        # Example: 7915800 paisa = ₹79,158 → $950
-        for col in ["open", "high", "low", "close"]:
-            df[col] = df[col] * PAISA_TO_USD
-        # Volume stays the same (it's the token amount)
-        
         return df
 
     return None
 
 
 def fetch_zebpay_ticker(symbol: str) -> Optional[Dict]:
-    """
-    Fetch real-time ticker from ZebPay.
-    Returns: {bid, ask, last, volume_24h, high_24h, low_24h, change_24h}
-    """
-    zeb_pair = binance_symbol_to_zebpay(symbol)
+    """Ticker prices in INR."""
+    zeb_pair = watchlist_symbol_to_zebpay(symbol)
     url = f"{ZEBPAY_SPOT_BASE}/api/v2/market/ticker"
-    
     params = {"symbol": zeb_pair}
-    
+
     try:
         resp = requests.get(url, params=params, timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            ticker = data.get("data", {})
-            
-            # ZebPay returns paisa (1/100 INR)
-            return {
-                "symbol": symbol,
-                "bid": float(ticker.get("bid", 0)) * PAISA_TO_USD,
-                "ask": float(ticker.get("ask", 0)) * PAISA_TO_USD,
-                "last": float(ticker.get("last", 0)) * PAISA_TO_USD,
-                "volume_24h": float(ticker.get("volume24h", 0)),
-                "high_24h": float(ticker.get("high24h", 0)) * PAISA_TO_USD,
-                "low_24h": float(ticker.get("low24h", 0)) * PAISA_TO_USD,
-                "change_24h": float(ticker.get("priceChangePercent", 0)),
-                "source": "zebpay_inr",
-            }
-    except Exception as e:
-        print(f"  ⚠ {symbol}: ZebPay ticker error: {e}")
-    return None
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        ticker = data.get("data", {}) or {}
+
+        def fget(key: str) -> float:
+            v = ticker.get(key)
+            if v is None or v == "":
+                return 0.0
+            return float(v)
+
+        return {
+            "symbol": symbol,
+            "bid": fget("bid"),
+            "ask": fget("ask"),
+            "last": fget("last"),
+            "volume_24h": fget("baseVolume"),
+            "high_24h": fget("high"),
+            "low_24h": fget("low"),
+            "change_24h": fget("percentage"),
+            "source": "zebpay_inr",
+        }
+    except Exception:
+        return None
 
 
 def get_zebpay_supported_pairs() -> List[str]:
-    """Return list of supported ZebPay trading pairs."""
+    """Legacy: keys in default map."""
     return list(_DEFAULT_MAP.keys())
 
 
 def is_zebpay_supported(symbol: str) -> bool:
-    """Check if symbol is available on ZebPay."""
     return symbol.upper() in _DEFAULT_MAP

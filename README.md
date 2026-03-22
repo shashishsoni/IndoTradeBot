@@ -102,7 +102,7 @@ This tool **does not** guarantee which stock to buy; it **ranks** candidates fro
 ```
 tradingBot/
 ├── config.py          # All thresholds, enums, and the TradeSignal dataclass
-├── data_fetcher.py    # yfinance (equities) + Binance API (crypto) + market data
+├── data_fetcher.py    # yfinance (equities) + ZebPay Spot INR (crypto) + market data
 ├── indicators.py      # EMA, RSI, MACD, Bollinger Bands, ATR, OBV
 ├── market_context.py  # Timing windows, event filters, India/crypto specifics
 ├── signal_engine.py   # Core signal generation combining all indicators
@@ -111,6 +111,7 @@ tradingBot/
 ├── formatter.py       # Structured output matching the signal report template
 ├── notifier.py        # Telegram alerts
 ├── main.py            # CLI entry point (interactive + single-shot + auto)
+├── zebpay_client.py   # ZebPay public Spot API (INR pairs, klines)
 └── requirements.txt
 ```
 
@@ -178,7 +179,7 @@ python main.py auto --telegram
 
 ### What Happens in Auto Mode
 
-- Scans all 20 Indian equity stocks and 10 crypto pairs
+- Scans all 20 Indian equity stocks and the crypto watchlist (default: **Xpress**-style INR list + QuickTrade MARKET pairs; override with `CRYPTO_WATCHLIST` / `CRYPTO_WATCHLIST_MODE`)
 - With `--telegram` / `-t`: after each scan, sends the **full detailed report** to Telegram (rankings, entry table, strong-signal guide, full signal on top pick) — split into multiple messages if very long
 - Prevents spam with 5-minute cooldown per asset
 - Console still shows the same detailed output locally
@@ -192,13 +193,11 @@ python main.py auto --telegram
 - See **`DEPLOY_RENDER.md`** for step-by-step; **`render.yaml`** uses `type: web` and `serve`.
 - If your plan includes **Background Workers**, you can use `auto` with `type: worker` instead (no HTTP needed).
 
-## Optional: ZebPay (public market data)
+## ZebPay (public market data)
 
-This project is **signal-only** by default (no live orders). To pull **crypto OHLCV from ZebPay Spot (INR)** instead of Binance, set:
+Crypto OHLCV is **always** from **ZebPay Spot (INR)** — prices and Telegram reports use **₹**.
 
-`CRYPTO_DATA_SOURCE=zebpay`
-
-See **`docs/ZEBPAY.md`** for env vars, symbol mapping (`BTCUSDT` → `BTC-INR`), and limits. **Order placement** is not implemented; use ZebPay’s private API only in a separate, audited module if you add it later.
+See **`docs/ZEBPAY.md`** for env vars, symbol mapping (`BTCUSDT` → `BTC-INR`), watchlist modes (**`CRYPTO_WATCHLIST_MODE=xpress`** default: Xpress-style list + QuickTrade; use **`quicktrade`** for a short ~7-symbol scan), and limits. **Order placement** is not implemented; use ZebPay’s private API only in a separate, audited module if you add it later.
 
 ## Risk Management
 

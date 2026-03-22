@@ -1,6 +1,6 @@
 """
 Web Dashboard - Indian Markets Focus
-No Binance - ZebPay only for crypto
+ZebPay Spot INR for crypto
 Includes SEBI-compliant disclaimers
 """
 
@@ -489,6 +489,59 @@ def api_risk():
 @app.route("/health")
 def health():
     return jsonify({"status": "ok", "time": datetime.now(IST).isoformat()})
+
+
+CRYPTO_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZebPay INR — Crypto watchlist</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #0a0e17; color: #e7e9ea; padding: 24px; max-width: 960px; margin: 0 auto; }
+        h1 { color: #ff9800; }
+        a { color: #90caf9; }
+        code { background: #1a237e; padding: 2px 8px; border-radius: 4px; font-size: 0.9rem; }
+        pre { background: #121824; padding: 16px; border-radius: 8px; overflow: auto; font-size: 12px; border: 1px solid #2a3f5f; }
+        .nav { margin-bottom: 20px; }
+        .hint { color: #90caf9; font-size: 0.95rem; margin: 12px 0; }
+    </style>
+</head>
+<body>
+    <div class="nav"><a href="/">← Dashboard</a></div>
+    <h1>₿ ZebPay Spot · INR</h1>
+    <p class="hint">Same watchlist logic as <code>main.py</code> / Telegram detailed scan (mode, cap, symbols, API gaps).</p>
+    <p>Env: <code>CRYPTO_WATCHLIST_MODE</code>, <code>CRYPTO_WATCHLIST</code>, <code>ZEBPAY_XPRESS_SYMBOLS</code>, <code>CRYPTO_WATCHLIST_MAX</code></p>
+    <div id="out">Loading…</div>
+    <script>
+        fetch('/api/crypto-watchlist')
+            .then(r => r.json())
+            .then(d => {
+                document.getElementById('out').innerHTML = '<pre>' + JSON.stringify(d, null, 2) + '</pre>';
+            })
+            .catch(e => { document.getElementById('out').textContent = 'Error: ' + e; });
+    </script>
+</body>
+</html>
+"""
+
+
+@app.route("/crypto")
+def crypto_page():
+    return render_template_string(CRYPTO_HTML)
+
+
+@app.route("/api/crypto-watchlist")
+def api_crypto_watchlist():
+    """Resolved ZebPay crypto watchlist + diagnostics (matches CLI / Telegram)."""
+    try:
+        from zebpay_client import resolve_crypto_watchlist
+
+        _, diag = resolve_crypto_watchlist()
+        return jsonify(diag)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 def start_dashboard(port=10000):

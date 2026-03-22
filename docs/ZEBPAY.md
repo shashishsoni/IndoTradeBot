@@ -11,7 +11,7 @@ This doc continues from [ZebPay API docs](https://apidocs.zebpay.com/) / [docs.z
 | **Spot** (`sapi`) | Spot trading vs **INR** (and related markets they list). |
 | **Futures** (`futuresbe`) | Leveraged futures — separate product, separate risk. |
 
-Your bot today **does not** call ZebPay; it uses other sources for crypto/equity **analysis only**. ZebPay APIs are relevant if you want **INR prices from ZebPay** or **automated trading on ZebPay**.
+For **crypto**, this project uses ZebPay’s **public klines** (INR) — see `zebpay_client.py`. **Kline prices are in INR** (e.g. BTC-INR in the lakh/crore range). Reports use **₹** for crypto.
 
 ## How this differs from your current bot
 
@@ -40,17 +40,22 @@ Do **not** wire live trading until you understand fees, slippage, and their [ter
 
 ## Implemented in this repo (optional)
 
-Public **klines** from ZebPay Spot are wired behind env flags (no API keys).
+Public **klines** from ZebPay Spot (`GET /api/v2/market/klines`) — no API keys.  
+**Exchange list:** `GET /api/v2/ex/exchangeInfo` — `fetch_zebpay_inr_base_assets()` returns every **Open** pair with **quote INR**. `fetch_zebpay_quicktrade_bases()` filters those to pairs that include **MARKET** in `orderTypes` (aligns with instant execution; QuickTrade list in the app may match this subset).
+
+**Xpress (app):** The mobile **Xpress** INR list is not a separate field in `exchangeInfo`. This repo keeps a **curated** `ZEBPAY_XPRESS_DEFAULT_BASES` list (TURBO, PEPE, SHIB, …), intersects it with Open INR pairs, then **merges** with QuickTrade MARKET bases via `fetch_zebpay_xpress_merged_bases()`. Override the curated list with **`ZEBPAY_XPRESS_SYMBOLS`** (comma-separated bases).
 
 | Variable | Meaning |
 |----------|--------|
-| `CRYPTO_DATA_SOURCE=zebpay` | Use ZebPay `GET /api/v2/market/klines` for crypto OHLCV instead of Binance. |
-| `ZEBPAY_FALLBACK_BINANCE=1` | If ZebPay returns nothing for a symbol, fall back to Binance (default **on**). |
-| `ZEBPAY_QUOTE=INR` | For unmapped symbols `FOOUSDT` → `FOO-INR`. |
-| `ZEBPAY_SPOT_BASE` | Override base URL (default `https://sapi.zebpay.com`). |
+| `ZEBPAY_QUOTE=INR` | Bare symbols `FOO` → `FOO-INR`. |
+| `ZEBPAY_SPOT_BASE` | Override API base (default `https://sapi.zebpay.com`). |
+| `CRYPTO_WATCHLIST` | Comma list, e.g. `BTC,ETH,SOL`. If **unset**, watchlist is built from ZebPay (see below). |
+| `CRYPTO_WATCHLIST_MODE` | **`xpress` (default)** — Xpress-style curated list + QuickTrade MARKET pairs, deduped. **`quicktrade`** — MARKET INR only (~7 symbols, faster). **`all`** — every Open INR base (capped). |
+| `ZEBPAY_XPRESS_SYMBOLS` | Optional comma list of base symbols to **replace** the built-in Xpress list (still intersected with Open INR when the API works). |
+| `CRYPTO_WATCHLIST_MAX` | Max symbols when auto-loading (default **120** for `xpress`, **40** for `quicktrade`; max **300**). |
 
-Code: **`zebpay_client.py`** (mapping + fetch), **`data_fetcher.py`** (`fetch_crypto_data`).
+Code: **`zebpay_client.py`**, **`data_fetcher.py`**, **`main.get_crypto_watchlist()`**.
 
-**Note:** Watchlist symbols stay `BTCUSDT`-style; they map to **`BTC-INR`** etc. Altcoins without an INR pair on ZebPay may need a manual mapping or will use Binance fallback.
+**Symbols:** Use bare bases (`BTC`, `ETH`) or `BTCUSDT`-style; both map to **`BTC-INR`**.
 
 If you want **order placement**, treat it as a **new feature** with explicit risk checks and kill-switch — not included here.

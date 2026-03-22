@@ -1,9 +1,7 @@
 """
-Data fetching layer for Indian equities (via yfinance) and crypto (via public APIs).
-Crypto default: Binance public klines. Optional: ZebPay Spot (INR) via CRYPTO_DATA_SOURCE=zebpay.
+Data fetching layer for Indian equities (via yfinance) and crypto (ZebPay Spot INR).
 """
 
-import os
 from typing import Optional
 
 import pandas as pd
@@ -45,47 +43,16 @@ def fetch_crypto_data(
     limit: int = 200,
 ) -> Optional[pd.DataFrame]:
     """
-    Fetch OHLCV: Binance public API by default, or ZebPay Spot if CRYPTO_DATA_SOURCE=zebpay.
+    OHLCV from ZebPay Spot (INR). All prices are in rupees.
     """
-    # ZebPay only - no Binance fallback
-    # ZebPay is the primary source for crypto (INR pairs)
     from zebpay_client import fetch_zebpay_klines
-    
+
     df = fetch_zebpay_klines(symbol, interval=interval, limit=limit)
     if df is not None and not df.empty:
         return df
-    
-    # If ZebPay fails, return None (no Binance fallback)
-    print(f"  ⚠ {symbol}: ZebPay unavailable - crypto data not available")
+
+    print(f"  ⚠ {symbol}: ZebPay unavailable — no data")
     return None
-
-    url = "https://api.binance.com/api/v3/klines"
-    params = {"symbol": symbol.upper(), "interval": interval, "limit": limit}
-
-    try:
-        resp = requests.get(url, params=params, timeout=15)
-        resp.raise_for_status()
-        raw = resp.json()
-    except Exception as e:
-        print(f"  ❌ {symbol}: Binance API error: {e}")
-        return None
-
-    # DEBUG: Print first row to verify data
-    if raw and len(raw) > 0:
-        print(f"  📊 {symbol}: First kline: open={raw[0][1]}, close={raw[0][4]}")
-
-    df = pd.DataFrame(raw, columns=[
-        "open_time", "open", "high", "low", "close", "volume",
-        "close_time", "quote_vol", "trades", "taker_buy_base",
-        "taker_buy_quote", "ignore",
-    ])
-    for col in ("open", "high", "low", "close", "volume"):
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-
-    df["open_time"] = pd.to_datetime(df["open_time"], unit="ms")
-    df = df.set_index("open_time")
-    df = df[["open", "high", "low", "close", "volume"]]
-    return df
 
 
 def fetch_btc_dominance() -> Optional[float]:
@@ -138,11 +105,15 @@ def fetch_data(
     """Unified fetch dispatcher."""
     if market == MarketType.INDIA_EQUITY:
         return fetch_equity_data(symbol, period=period, interval=interval)
-    elif market == MarketType.CRYPTO:
+    if market == MarketType.CRYPTO:
         interval_map = {
-            "1d": "1d", "1h": "1h", "4h": "4h",
-            "15m": "15m", "5m": "5m", "1wk": "1w",
+            "1d": "1d",
+            "1h": "1h",
+            "4h": "4h",
+            "15m": "15m",
+            "5m": "5m",
+            "1wk": "1w",
         }
-        binance_interval = interval_map.get(interval, "1d")
-        return fetch_crypto_data(symbol, interval=binance_interval)
+        zeb_interval = interval_map.get(interval, "1d")
+        return fetch_crypto_data(symbol, interval=zeb_interval)
     return None

@@ -6,7 +6,7 @@ volume confirmation); see README for external references.
 """
 
 import datetime
-from typing import List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 from zoneinfo import ZoneInfo
 
@@ -15,6 +15,10 @@ from risk_manager import RiskState
 from formatter import format_signal_report
 
 IST = ZoneInfo("Asia/Kolkata")
+
+
+def _is_crypto_scan(market_name: str) -> bool:
+    return market_name.strip().lower() == "crypto"
 
 
 # Educational text (synthesized from standard TA practice; not personalized advice)
@@ -48,25 +52,49 @@ def _sort_by_confidence(signals: Sequence[TradeSignal]) -> List[TradeSignal]:
     return sorted(signals, key=lambda s: s.confidence, reverse=True)
 
 
-def format_entry_focus_table(results: Sequence[TradeSignal]) -> str:
-    """Compact table: where to look for entries (all symbols)."""
+def _fmt_inr_compact(value: float) -> str:
+    """Short ₹ for Telegram (L/Cr for large crypto prices)."""
+    if value >= 1e7:
+        return f"₹{value / 1e7:.2f}Cr"
+    if value >= 1e5:
+        return f"₹{value / 1e5:.2f}L"
+    if value >= 1000:
+        return f"₹{value:,.0f}"
+    return f"₹{value:,.2f}"
+
+
+def _fmt_money(currency_symbol: str, value: float) -> str:
+    if currency_symbol == "₹":
+        return _fmt_inr_compact(value)
+    return f"{currency_symbol}{value:,.2f}"
+
+
+def format_entry_focus_table(
+    results: Sequence[TradeSignal],
+    *,
+    zebpay_inr: bool = False,
+) -> str:
+    """Compact entry lines for Telegram (₹ / L / Cr)."""
+    title = (
+        "┌─ ENTRY — ZebPay Spot INR (₹) — zone / SL ─────────────────────┐"
+        if zebpay_inr
+        else "┌─ ENTRY (₹) — zone / SL ─────────────────────────────────────────┐"
+    )
     lines = [
         "",
-        "┌─ WHERE TO LOOK (ENTRY FOCUS) ────────────────────────────────────────────┐",
-        f"│ {'Symbol':<12} {'Sig':<5} {'Conf':<6} {'Entry zone (mid)':<28} {'Stop':<14} │",
-        "├" + "─" * 74 + "┤",
+        title,
     ]
     for s in _sort_by_confidence(list(results)):
         c = s.currency_symbol
-        mid = (s.entry_low + s.entry_high) / 2
         sig = s.signal.value
-        entry_txt = f"{c}{s.entry_low:,.2f}-{c}{s.entry_high:,.2f}"
-        if len(entry_txt) > 28:
-            entry_txt = entry_txt[:25] + "..."
-        lines.append(
-            f"│ {s.asset:<12} {sig:<5} {s.confidence}/10  {entry_txt:<28} {c}{s.stop_loss:,.2f} │"
+        entry_txt = (
+            f"{_fmt_money(c, s.entry_low)}–{_fmt_money(c, s.entry_high)}"
         )
-    lines.append("└" + "─" * 74 + "┘")
+        sl_txt = _fmt_money(c, s.stop_loss)
+        lines.append(
+            f"│ {s.asset:<8} {sig:<4} {s.confidence}/10  {entry_txt}  SL {sl_txt} │"
+        )
+    lines.append("└" + "─" * 64 + "┘")
     return "\n".join(lines)
 
 
@@ -139,6 +167,7 @@ def format_detailed_scan_report(
     risk_state: Optional[RiskState] = None,
     include_guide: bool = True,
     include_full_top_report: bool = True,
+    crypto_watchlist_diag: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
     Full textual report after a watchlist scan: rankings, table, education, optional full signal for top actionable.
@@ -146,17 +175,45 @@ def format_detailed_scan_report(
     if not results:
         return "\n⚠️ No symbols returned data — check network or symbols.\n"
 
+    is_crypto = _is_crypto_scan(market_name)
     lines = [
         "",
         "╔" + "═" * 68 + "╗",
         f"║  DETAILED SCAN — {market_name.upper():<48} ║",
         "╚" + "═" * 68 + "╝",
-        "",
-        format_ranked_opportunities(results),
-        "",
-        format_entry_focus_table(results),
-        "",
     ]
+    if is_crypto:
+        lines.append(
+            "💱 Data: ZebPay Spot · INR pairs (BTC-INR, …) — ₹ = Indian Rupees from API."
+        )
+        if crypto_watchlist_diag:
+            from zebpay_client import format_crypto_watchlist_summary
+
+            lines.append(f"  ⚙️ {format_crypto_watchlist_summary(crypto_watchlist_diag)}")
+            xs = crypto_watchlist_diag.get("symbols") or []
+            if xs:
+                if len(xs) <= 30:
+                    listing = ", ".join(xs)
+                else:
+                    listing = ", ".join(xs[:30]) + f" … (+{len(xs) - 30} more)"
+                lines.append(f"  📋 Watchlist ({len(xs)}): {listing}")
+            miss = crypto_watchlist_diag.get("xpress_not_on_exchange_api") or []
+            if miss:
+                shown = miss[:15]
+                tail = " …" if len(miss) > 15 else ""
+                lines.append(
+                    f"  ⏭️ Xpress names not Open INR on API ({len(miss)}): "
+                    f"{', '.join(shown)}{tail}"
+                )
+        lines.append("")
+    lines.extend(
+        [
+            format_ranked_opportunities(results),
+            "",
+            format_entry_focus_table(results, zebpay_inr=is_crypto),
+            "",
+        ]
+    )
 
     if include_guide:
         lines.append(STRONG_SIGNAL_GUIDE)
