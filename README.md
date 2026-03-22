@@ -187,7 +187,7 @@ python main.py auto --telegram
 
 ## Deploy on Render
 
-**Free Web Service:** use **`python main.py serve ...`** — it binds HTTP to **`$PORT`** (`/` and `/health` return `OK`) and runs the same scan loop as `auto` in a **background thread**.
+**Free Web Service:** use **`python main.py serve ...`** — it binds HTTP to **`$PORT`** (`/` = **Flask HTML homepage**; `/health` = JSON) and runs the same scan loop as `auto` in a **background thread**.
 
 - Plain **`python main.py auto`** on a Web Service will fail (*“No open ports detected”*) because there is no HTTP listener.
 - See **`DEPLOY_RENDER.md`** for step-by-step; **`render.yaml`** uses `type: web` and `serve`.

@@ -25,12 +25,13 @@ If you only run `auto` on a Web Service, you may see:
 2. Connect your repo and branch.
 3. **Build command:** `pip install -r requirements.txt`
 4. **Start command:** `python -u main.py serve -i 5 -t -m equity crypto`  
-   (`-u` = unbuffered logs; same flags as `auto`: interval, `-t` Telegram, `-m` markets.)
+   (`-u` = unbuffered logs; same flags as `auto`: interval, `-t` Telegram, `-m` markets.)  
+   This **one process** runs: **Flask homepage** (`/` = HTML dashboard, `/api/*` = JSON) **and** the **scan/Telegram daemon** in a background thread.
 5. **Environment** → add secrets:
    - `TELEGRAM_BOT_TOKEN`
    - `TELEGRAM_CHAT_ID`
    - `CAPITAL` (e.g. `1000`)
-6. Deploy. Open your service URL — you should see `OK - IndoTradeBot` on `/` or `/health`.
+6. Deploy. Open your service URL — **`/` shows the HTML homepage** (not plain text). `/health` returns JSON.
 
 ### Blueprint from repo
 

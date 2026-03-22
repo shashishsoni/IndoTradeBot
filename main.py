@@ -7,10 +7,9 @@ AUTOMATED MODE:
     python main.py auto --interval 5   # Scan every 5 minutes
     python main.py auto --telegram     # Enable Telegram alerts
 
-RENDER FREE WEB SERVICE — same behavior as `auto`, plus HTTP on $PORT:
+RENDER FREE WEB SERVICE — same behavior as `auto`, plus Flask homepage on $PORT:
     python main.py serve -i 5 -t -m equity crypto
-    # Equivalent to: python main.py auto -i 5 -t -m equity crypto
-    # (adds only / and /health so Render Web Service port checks pass)
+    # GET / → full HTML dashboard (not plain text).
 """
 
 import datetime
@@ -19,7 +18,6 @@ import signal
 import sys
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import List, Optional
 
 from zoneinfo import ZoneInfo
@@ -887,25 +885,6 @@ def parse_serve_args(args_list):
     return parser.parse_args(clean_args)
 
 
-class _RenderHealthHandler(BaseHTTPRequestHandler):
-    """Minimal HTTP for Render free Web Service (must listen on $PORT)."""
-
-    def log_message(self, format, *args):
-        return  # keep logs quiet
-
-    def do_GET(self):
-        if self.path in ("/", "/health"):
-            body = b"OK - IndoTradeBot\n"
-            self.send_response(200)
-            self.send_header("Content-type", "text/plain; charset=utf-8")
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(body)
-        else:
-            self.send_response(404)
-            self.end_headers()
-
-
 def run_web_server_with_bot(
     interval_minutes: int = 15,
     markets: List[str] = None,
@@ -915,17 +894,14 @@ def run_web_server_with_bot(
     smart_schedule: bool = True,
 ) -> None:
     """
-    Run HTTP on 0.0.0.0:$PORT and the trading daemon in a background thread.
-    Use this on Render free Web Service (workers may be paid on some plans).
+    Run Flask (homepage + APIs) on 0.0.0.0:$PORT and the trading daemon in a background thread.
+    GET / always returns the HTML dashboard from web_dashboard.
     """
     port = int(os.environ.get("PORT", "10000"))
-    server: Optional[HTTPServer] = None
 
     def on_signal(signum, frame):
         global _daemon_running
         _daemon_running = False
-        if server is not None:
-            threading.Thread(target=server.shutdown, daemon=True).start()
 
     signal.signal(signal.SIGINT, on_signal)
     signal.signal(signal.SIGTERM, on_signal)
@@ -944,13 +920,18 @@ def run_web_server_with_bot(
     bot_thread = threading.Thread(target=_run_bot, name="indo-bot-daemon", daemon=True)
     bot_thread.start()
 
-    server = HTTPServer(("0.0.0.0", port), _RenderHealthHandler)
-    print(f"\n🌐 HTTP health: http://0.0.0.0:{port}/  (GET / or /health)")
-    print("   Bot daemon runs in background — use free Web Service on Render.\n")
-    try:
-        server.serve_forever()
-    finally:
-        server.server_close()
+    from web_dashboard import app as flask_app
+
+    print(f"\n🌐 Homepage (HTML): http://0.0.0.0:{port}/")
+    print("   /health + /api/* JSON · /crypto → /#crypto")
+    print("   Bot daemon runs in background (same as `auto`).\n")
+    flask_app.run(
+        host="0.0.0.0",
+        port=port,
+        debug=False,
+        threaded=True,
+        use_reloader=False,
+    )
 
 
 if __name__ == "__main__":

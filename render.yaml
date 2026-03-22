@@ -1,5 +1,5 @@
-# Render Blueprint — Free Web Service: HTTP on $PORT + bot in background thread.
-# Use: python main.py serve (see DEPLOY_RENDER.md).
+# Render Blueprint — Free Web Service: Flask dashboard + APIs on $PORT + bot daemon thread.
+# Use: python main.py serve (see DEPLOY_RENDER.md). GET / = HTML homepage.
 
 services:
   - type: web
